@@ -12,6 +12,13 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
+# ═══ الروابط الذكية (Smart Links) ═══
+SMART_LINKS = {
+    "jalabiya_red": "الجلابية الحمراء",
+    "jalabiya_blue": "الجلابية الزرقاء",
+    "silik": "قماش حرير",
+    "perfum": "عطر الفانيليا"
+}
 ASK_NAME, ASK_PHONE, ASK_ADDRESS, CONFIRM = range(4)
 
 def load_token():
@@ -29,6 +36,10 @@ def load_products():
 # ═══ أوامر البوت ═══
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """الترحيب الأول"""
+    # 1. التحقق من وجود كلمة سرية (رابط ذكي)
+    args = context.args
+
+    # القائمة الرئيسية
     keyboard = [
         [InlineKeyboardButton("👗 تصفح الجلابيب", callback_data="cat_jalabib")],
         [InlineKeyboardButton("🧵 تصفح الأقمشة", callback_data="cat_fabrics")],
@@ -37,19 +48,42 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
-        "أهلاً بك في متجر الخياطة اليدوية 🌸\n\n"
-        "نحن نقدم لكم افضل الجلابيب, بأفضل الاقمشة, مع منتجات أخرى مكملة.\n"
-        "اختر مايهمك:",
-        reply_markup=reply_markup
-    )
+    if args and args[0] in SMART_LINKS:
+        # ═══ الزبونة أتت من رابط ذكي ═══
+        product_name = SMART_LINKS[args[0]]
+        context.user_data['selected_product'] = product_name
+
+        # نضيف زر "اطلب الآن" مخصص
+        smart_keyboard = [
+            [InlineKeyboardButton(f"🛒 اطلب {product_name} الان", callback_data="order_start_red")],
+            [InlineKeyboardButton(f"👗 تصفح كل المنتجات", callback_data="back_home")]
+        ]
+        smart_markup = InlineKeyboardMarkup(smart_keyboard)
+
+        await update.message.reply_text(
+            f"أهلا بك 🌸\n"
+            f"لاحظت إعجابك ب <b>{product_name}</b>\n"
+            f"هل تودين طلبه الان, أم تصفح المتجر؟",
+            parse_mode="HTML",
+            reply_markup=smart_markup
+        )
+
+    else:
+        # ═══ ترحيب عادي ═══    
+        await update.message.reply_text(
+            "أهلاً بك في متجر الخياطة اليدوية 🌸\n\n"
+            "نحن نقدم لكم افضل الجلابيب, بأفضل الاقمشة, مع منتجات أخرى مكملة.\n"
+            "اختر مايهمك:",
+            reply_markup=reply_markup
+        )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة النقرات"""
     query = update.callback_query
     
     # ⚠️ مهم: تجاهل زر الطلب ليصل إلى ConversationHandler
-    if query.data == "order_start":
+    if query.data in ("order_start", "order_start_red"):
+        await query.answer()  # ← تأكيد النقرة لتجنب الخطأ
         return
     
     await query.answer()
@@ -75,6 +109,38 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
     
+    elif query.data == "cat_fabrics":
+        products = load_products()["fabrics"]
+        text = "🧵 <b>الاقمشة المتوفرة: </b>\n\n"
+        for p in products:
+            text += f"🔹 <b>{p['name']}</b>\n"
+            text += f"💰 السعر: {p['price']} دج\n"
+            text += f"🎨 الألوان: {', '.join(p['colors'])}\n"
+            text += f"<i>{p['description']}</i>\n\n"
+
+        keyboard = [
+            [InlineKeyboardButton("🛒 اطلب الآن", callback_data="order_start")],
+            [InlineKeyboardButton("⬅️ رجوع", callback_data="back_home")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
+
+    elif query.data == "cat_others":
+        products = load_products()["others"]  # ← أضفنا ()
+        text = "🛍️ <b>المنتجات المكملة:</b>\n\n"
+        for p in products:
+            text += f"🔹 <b>{p['name']}</b>\n"
+            text += f"💰 السعر: {p['price']} دج\n"
+            text += f"<i>{p['description']}</i>\n\n"  # ← أضفنا </i>
+        
+        keyboard = [
+            [InlineKeyboardButton("🛒 اطلب الان", callback_data="order_start")],
+            [InlineKeyboardButton("⬅️ رجوع", callback_data="back_home")]
+        ]
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
+    
     elif query.data == "back_home":
         keyboard = [
             [InlineKeyboardButton("👗 تصفح الجلابيب", callback_data="cat_jalabib")],
@@ -87,7 +153,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "أهلاً بك في متجر الخياطة اليدوية 🌸\n\nاختر ما يهمك:",
             reply_markup=reply_markup
         )
-
+ 
 # ═══ استمارة الطلب ═══
 async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """بدء المحادثة"""
@@ -97,6 +163,7 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     context.user_data['order'] = {}
+    context.user_data['order']['product'] = context.user_data.get('selected_product', 'منتج غير محدد')
     await query.edit_message_text("📝 ممتاز! لنبدأ طلبك.\n\nما هو <b>اسمك الكامل</b>؟", parse_mode="HTML")
     return ASK_NAME
 
@@ -158,6 +225,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 3. تجهيز رسالة الإشعار للمجموعة
         admin_message = (
             f"🔔 <b>طلب جديد</b>\n\n"
+            f"📦 <b>المنتج: </b>{order.get('product', 'غير محدد')}\n"
             f"👤 الاسم: {order.get('name')}\n"
             f"📞 الهاتف: {order.get('phone')}\n"
             f"📍 العنوان: {order.get('address')}\n"
@@ -202,7 +270,10 @@ def main():
     app.add_handler(CommandHandler("start", start))
 
     conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(order_start, pattern="^order_start$")],
+        entry_points=[
+            CallbackQueryHandler(order_start, pattern="^order_start$"),
+            CallbackQueryHandler(order_start, pattern="^order_start_red$")
+        ],
         states={
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
