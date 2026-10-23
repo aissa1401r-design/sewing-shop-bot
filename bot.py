@@ -48,34 +48,56 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if args and args[0] in SMART_LINKS:
-        # ═══ الزبونة أتت من رابط ذكي ═══
-        product_name = SMART_LINKS[args[0]]
-        context.user_data['selected_product'] = product_name
+    if args:
+        arg = args[0]
+        product_name = None
+        
+        # 1. إذا كان رابطاً ثابتاً (من SMART_LINKS)
+        if arg in SMART_LINKS:
+            product_name = SMART_LINKS[arg]
+        
+        # 2. إذا كان رابطاً ديناميكياً (من بوت الإدارة: product_1, product_2...)
+        elif arg.startswith("product_"):
+            try:
+                # استخراج رقم المنتج
+                product_id = int(arg.split("_")[1])
+                # قراءة المنتجات
+                data = load_products()
+                all_products = data.get("jalabib", []) + data.get("fabrics", []) + data.get("others", [])
+                
+                # البحث عن المنتج بالرقم
+                for p in all_products:
+                    if p.get("id") == product_id:
+                        product_name = p["name"]
+                        break
+            except (ValueError, IndexError):
+                pass
+        
+        # إذا وجدنا المنتج (سواء ثابت أو ديناميكي)
+        if product_name:
+            context.user_data['selected_product'] = product_name
+            smart_keyboard = [
+                [InlineKeyboardButton(f"🛒 اطلب {product_name} الان", callback_data="order_start_red")],
+                [InlineKeyboardButton(f"👗 تصفح كل المنتجات", callback_data="back_home")]
+            ]
+            smart_markup = InlineKeyboardMarkup(smart_keyboard)
 
-        # نضيف زر "اطلب الآن" مخصص
-        smart_keyboard = [
-            [InlineKeyboardButton(f"🛒 اطلب {product_name} الان", callback_data="order_start_red")],
-            [InlineKeyboardButton(f"👗 تصفح كل المنتجات", callback_data="back_home")]
-        ]
-        smart_markup = InlineKeyboardMarkup(smart_keyboard)
+            await update.message.reply_text(
+                f"أهلا بك 🌸\n"
+                f"لاحظت إعجابك ب <b>{product_name}</b>\n"
+                f"هل تودين طلبه الان, أم تصفح المتجر؟",
+                parse_mode="HTML",
+                reply_markup=smart_markup
+            )
+            return # ← الخروج من الدالة بعد عرض الرسالة المخصصة
 
-        await update.message.reply_text(
-            f"أهلا بك 🌸\n"
-            f"لاحظت إعجابك ب <b>{product_name}</b>\n"
-            f"هل تودين طلبه الان, أم تصفح المتجر؟",
-            parse_mode="HTML",
-            reply_markup=smart_markup
-        )
-
-    else:
-        # ═══ ترحيب عادي ═══    
-        await update.message.reply_text(
-            "أهلاً بك في متجر الخياطة اليدوية 🌸\n\n"
-            "نحن نقدم لكم افضل الجلابيب, بأفضل الاقمشة, مع منتجات أخرى مكملة.\n"
-            "اختر مايهمك:",
-            reply_markup=reply_markup
-        )
+    # ═══ ترحيب عادي (إذا لم يكن هناك رابط) ═══    
+    await update.message.reply_text(
+        "أهلاً بك في متجر الخياطة اليدوية 🌸\n\n"
+        "نحن نقدم لكم افضل الجلابيب, بأفضل الاقمشة, مع منتجات أخرى مكملة.\n"
+        "اختر مايهمك:",
+        reply_markup=reply_markup
+    )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة النقرات"""
