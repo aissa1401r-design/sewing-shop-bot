@@ -36,44 +36,47 @@ def load_products():
 # ═══ أوامر البوت ═══
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """الترحيب الأول"""
-    # 1. التحقق من وجود كلمة سرية (رابط ذكي)
     args = context.args
+    data = load_products()
+    categories = data.get("categories", {})
 
-    # القائمة الرئيسية
-    keyboard = [
-        [InlineKeyboardButton("👗 تصفح الجلابيب", callback_data="cat_jalabib")],
-        [InlineKeyboardButton("🧵 تصفح الأقمشة", callback_data="cat_fabrics")],
-        [InlineKeyboardButton("🛍️ المنتجات المكملة", callback_data="cat_others")],
-        [InlineKeyboardButton("📞 تواصل معنا", callback_data="contact")],
-    ]
+    # بناء الأزرار ديناميكياً من الأقسام
+    keyboard = []
+    row = []
+    for cat_id, cat_info in categories.items():
+        row.append(InlineKeyboardButton(cat_info["name"], callback_data=f"cat_{cat_id}"))
+        if len(row) == 2: # زرين في كل صف
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    
+    keyboard.append([InlineKeyboardButton("📞 تواصل معنا", callback_data="contact")])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if args:
         arg = args[0]
         product_name = None
         
-        # 1. إذا كان رابطاً ثابتاً (من SMART_LINKS)
+        # الروابط الثابتة (احتياطية)
+        SMART_LINKS = {
+            "jalabiya_red": "الجلابية الحمراء",
+            "jalabiya_blue": "الجلابية الزرقاء",
+        }
+        
         if arg in SMART_LINKS:
             product_name = SMART_LINKS[arg]
-        
-        # 2. إذا كان رابطاً ديناميكياً (من بوت الإدارة: product_1, product_2...)
         elif arg.startswith("product_"):
             try:
-                # استخراج رقم المنتج
                 product_id = int(arg.split("_")[1])
-                # قراءة المنتجات
-                data = load_products()
-                all_products = data.get("jalabib", []) + data.get("fabrics", []) + data.get("others", [])
-                
-                # البحث عن المنتج بالرقم
-                for p in all_products:
+                products = data.get("products", [])
+                for p in products:
                     if p.get("id") == product_id:
                         product_name = p["name"]
                         break
             except (ValueError, IndexError):
                 pass
         
-        # إذا وجدنا المنتج (سواء ثابت أو ديناميكي)
         if product_name:
             context.user_data['selected_product'] = product_name
             smart_keyboard = [
@@ -89,13 +92,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML",
                 reply_markup=smart_markup
             )
-            return # ← الخروج من الدالة بعد عرض الرسالة المخصصة
+            return
 
-    # ═══ ترحيب عادي (إذا لم يكن هناك رابط) ═══    
     await update.message.reply_text(
         "أهلاً بك في متجر الخياطة اليدوية 🌸\n\n"
-        "نحن نقدم لكم افضل الجلابيب, بأفضل الاقمشة, مع منتجات أخرى مكملة.\n"
-        "اختر مايهمك:",
+        "نحن نقدم لكم أفضل المنتجات.\n"
+        "اختر ما يهمك:",
         reply_markup=reply_markup
     )
 
@@ -103,9 +105,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة النقرات"""
     query = update.callback_query
     
-    # ⚠️ مهم: تجاهل زر الطلب ليصل إلى ConversationHandler
     if query.data in ("order_start", "order_start_red"):
-        await query.answer()  # ← تأكيد النقرة لتجنب الخطأ
+        await query.answer()
         return
     
     await query.answer()
@@ -113,69 +114,70 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "contact":
         await query.edit_message_text("📞 للتواصل مع صاحبة المتجر:\n@اسم_حساب_صاحبة_المتجر")
     
-    elif query.data == "cat_jalabib":
-        products = load_products()["jalabib"]
-        text = "👗 <b>الجلابيب المتوفرة:</b>\n\n"
-        for p in products:
-            text += f"🔹 <b>{p['name']}</b>\n"
-            text += f"💰 السعر: {p['price']} دج\n"
-            text += f"🎨 الألوان: {', '.join(p['colors'])}\n"
-            text += f"📏 المقاسات: {', '.join(p['sizes'])}\n"
-            text += f"<i>{p['description']}</i>\n\n"
-
-        keyboard = [
-            [InlineKeyboardButton("🛒 اطلب الان", callback_data="order_start")],
-            [InlineKeyboardButton("⬅️ رجوع", callback_data="back_home")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
-    
-    elif query.data == "cat_fabrics":
-        products = load_products()["fabrics"]
-        text = "🧵 <b>الاقمشة المتوفرة: </b>\n\n"
-        for p in products:
-            text += f"🔹 <b>{p['name']}</b>\n"
-            text += f"💰 السعر: {p['price']} دج\n"
-            text += f"🎨 الألوان: {', '.join(p['colors'])}\n"
-            text += f"<i>{p['description']}</i>\n\n"
-
-        keyboard = [
-            [InlineKeyboardButton("🛒 اطلب الآن", callback_data="order_start")],
-            [InlineKeyboardButton("⬅️ رجوع", callback_data="back_home")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
-
-    elif query.data == "cat_others":
-        products = load_products()["others"]  # ← أضفنا ()
-        text = "🛍️ <b>المنتجات المكملة:</b>\n\n"
-        for p in products:
-            text += f"🔹 <b>{p['name']}</b>\n"
-            text += f"💰 السعر: {p['price']} دج\n"
-            text += f"<i>{p['description']}</i>\n\n"  # ← أضفنا </i>
+    elif query.data.startswith("cat_"):
+        cat_id = query.data.replace("cat_", "")
+        data = load_products()
+        category_info = data["categories"].get(cat_id, {})
+        products = [p for p in data.get("products", []) if p.get("category") == cat_id]
         
+        if not products:
+            await query.edit_message_text(f"لا توجد منتجات حالياً في قسم {category_info.get('name', '')}.")
+            return
+
+        text = f"<b>منتجات قسم {category_info.get('name', '')}:</b>\n\n"
+        
+        # ترجمة أسماء السمات
+        ARABIC_NAMES = {
+            "colors": "🎨 الألوان",
+            "sizes": "📏 المقاسات",
+            "volume": "🧴 السعة",
+            "weight": "⚖️ الوزن",
+            "details": "📝 التفاصيل"
+        }
+
+        for p in products:
+            text += f"🔹 <b>{p['name']}</b>\n"
+            text += f"💰 السعر: {p['price']} دج\n"
+            
+            # عرض السمات الديناميكية
+            for k, v in p.get('attributes', {}).items():
+                arabic_name = ARABIC_NAMES.get(k, k)
+                if isinstance(v, list):
+                    v = "، ".join([str(item).strip() for item in v])
+                text += f"{arabic_name}: {v}\n"
+                
+            text += f"<i>{p.get('description', '')}</i>\n\n"
+
         keyboard = [
             [InlineKeyboardButton("🛒 اطلب الان", callback_data="order_start")],
             [InlineKeyboardButton("⬅️ رجوع", callback_data="back_home")]
         ]
-
         reply_markup = InlineKeyboardMarkup(keyboard)
+
         await query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
     
     elif query.data == "back_home":
-        keyboard = [
-            [InlineKeyboardButton("👗 تصفح الجلابيب", callback_data="cat_jalabib")],
-            [InlineKeyboardButton("🧵 تصفح الأقمشة", callback_data="cat_fabrics")],
-            [InlineKeyboardButton("🛍️ المنتجات المكملة", callback_data="cat_others")],
-            [InlineKeyboardButton("📞 تواصل معنا", callback_data="contact")],
-        ]
+        data = load_products()
+        categories = data.get("categories", {})
+        
+        keyboard = []
+        row = []
+        for cat_id, cat_info in categories.items():
+            row.append(InlineKeyboardButton(cat_info["name"], callback_data=f"cat_{cat_id}"))
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+        
+        keyboard.append([InlineKeyboardButton("📞 تواصل معنا", callback_data="contact")])
         reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await query.edit_message_text(
             "أهلاً بك في متجر الخياطة اليدوية 🌸\n\nاختر ما يهمك:",
             reply_markup=reply_markup
         )
- 
+        
 # ═══ استمارة الطلب ═══
 async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """بدء المحادثة"""

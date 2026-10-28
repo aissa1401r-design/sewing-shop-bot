@@ -1,67 +1,122 @@
 {
+  "categories": {
+    "jalabib": {
+      "name": "👗 جلابيب",
+      "attributes": [
+        "colors",
+        "sizes"
+      ]
+    },
+    "accessories": {
+      "name": "💍 أكسسوارات",
+      "attributes": [
+        "colors",
+        "details"
+      ]
+    },
+    "perfumes": {
+      "name": "🧴 عطور",
+      "attributes": [
+        "volume"
+      ]
+    },
+    "oils": {
+      "name": "🌿 زيوت",
+      "attributes": [
+        "volume"
+      ]
+    },
+    "home": {
+      "name": "🏠 مستلزمات منزلية",
+      "attributes": [
+        "weight",
+        "details"
+      ]
+    },
+    "other": {
+      "name": "🛍️ آخر",
+      "attributes": [
+        "details"
+      ]
+    }
+  },
+  "products": [
+    {
+      "id": 1,
+      "category": "jalabib",
+      "name": "جلابية قطنية مطرزة",
+      "price": 5000,
+      "description": "جلابية قطنية 100%، مطرزة يدوياً.",
+      "attributes": {
+        "colors": [
+          "أحمر",
+          "أزرق",
+          "أخضر"
+        ],
+        "sizes": [
+          "S",
+          "M",
+          "L",
+          "XL"
+        ]
+      }
+    },
+    {
+      "category": "jalabib",
+      "attributes": {
+        "colors": [
+          "ازرق.احمر.بني"
+        ],
+        "sizes": [
+          "M.L.XL"
+        ]
+      },
+      "photo": "AgACAgQAAxkBAAMYauG-8c3JBgnJcwxzc8vOeqXPpzUAAkUPaxsoHxBTIawuG15EO98BAAMCAAN5AAM9BA",
+      "name": "جلباب عاصمي قطعة واحدة بكم الكشكشة",
+      "price": 4500,
+      "description": "واسع وفضفاض انيق ومتقن\nباختصار رووووعة",
+      "id": 2
+    },
+    {
+      "category": "perfumes",
+      "attributes": {
+        "volume": "50"
+      },
+      "photo": "AgACAgQAAxkBAAMmauHBASw0cUPU00LWVlsz6nxt2TYAAlQPaxsoHxBT0g8kTqKY8KIBAAMCAAN5AAM9BA",
+      "name": "ارغان",
+      "price": 1500,
+      "description": "راااائعة",
+      "id": 3
+    },
+    {
+      "category": "jalabib",
+      "attributes": {
+        "colors": [
+          "الاخضر.الاحمر.البني"
+        ],
+        "sizes": [
+          "M/L/XL/XXL"
+        ]
+      },
+      "photo": "AgACAgQAAxkBAAMyauJoVAdgWTcysgdasWXLdZ69kNIAAnoQaxsoHxBTEumd48gWn0sBAAMCAAN5AAM9BA",
+      "name": "جلباب فراشة العاصمي",
+      "price": 4800,
+      "description": "الجلباب الذي يبحث عنه الكثير",
+      "id": 4
+    }
+  ],
   "jalabib": [
     {
       "id": 1,
-      "name": "جلابية قطنية مطرزة",
-      "price": 5000,
-      "colors": [
-        "أحمر",
-        "أزرق",
-        "أخضر"
-      ],
-      "sizes": [
-        "S",
-        "M",
-        "L",
-        "XL"
-      ],
-      "description": "جلابية قطنية 100%، مطرزة يدوياً."
-    },
-    {
-      "id": 2,
-      "name": "جلابية تقليدية",
-      "price": 3500,
-      "colors": [
-        "أسود",
-        "أبيض"
-      ],
-      "sizes": [
-        "M",
-        "L"
-      ],
-      "description": "جلابية تقليدية أنيقة."
-    },
-    {
-      "id": 3,
-      "name": "جلباب بني",
-      "price": 5200,
+      "name": "جلباب قطعتين",
+      "price": 5500,
       "colors": [
         "أحمر"
       ],
       "sizes": [
         "M"
       ],
-      "description": "جلباب بني والالوان متوفرة عريض بقماش sph"
-    }
-  ],
-  "fabrics": [
-    {
-      "id": 3,
-      "name": "قماش حرير",
-      "price": 2000,
-      "colors": [
-        "أحمر",
-        "أزرق"
-      ],
-      "description": "قماش حرير فاخر، مدة القطعة 3 أمتار."
-    }
-  ],
-  "others": [
-    {
-      "id": 4,
-      "name": "عطر نسائي",
-      "price": 1500,
-      "description": "عطر نسائي برائحة الفانيليا."
+      "description": "فضفاض واسع بقماش ولا اروع"
     }
   ]
 }
