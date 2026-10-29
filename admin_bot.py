@@ -18,6 +18,10 @@ load_dotenv()
 # ═══ الحالات ═══ (تم حذف التكرار)
 CHOOSE_CATEGORY, ASK_PHOTO, ASK_NAME, ASK_PRICE, ASK_DYNAMIC_ATTR, ASK_DESC = range(6)
 
+EDIT_ID, EDIT_FIELD, EDIT_VALUE = range(10, 13) # أرقام جديدة لتجنب التعارض
+
+DELETE_ID, DELETE_CONFIRM = range(13, 15)
+
 ATTR_QUESTIONS = {
     "colors": "🎨 ما الألوان المتاحة؟ (افصلي بينها بفاصلة)",
     "sizes": "📏 ما المقاسات المتاحة؟ (افصلي بينها بفاصلة)",
@@ -190,6 +194,152 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ تم الإلغاء.")
     return ConversationHandler.END
+    
+async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض جميع المنتجات في بوت الإدارة"""
+    data = load_data()
+    products = data.get("products", [])
+    
+    if not products:
+        await update.message.reply_text("📭 لا توجد منتجات حالياً.")
+        return
+    
+    text = "📦 <b>قائمة المنتجات الحالية:</b>\n\n"
+    for p in products:
+        # جلب اسم القسم
+        cat_id = p.get("category", "")
+        cat_name = data["categories"].get(cat_id, {}).get("name", "غير محدد")
+        
+        text += f"🆔 <b>ID: {p['id']}</b> | {p['name']}\n"
+        text += f"   💰 السعر: {p['price']} دج | القسم: {cat_name}\n\n"
+    
+    text += "💡 <i>للتعديل أو الحذف، استخدم الأوامر /edit أو /delete</i>"
+    await update.message.reply_text(text, parse_mode="HTML")
+async def edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🛠️ أرسلي <b>ID</b> المنتج الذي تريدين تعديله:\n(استخدمي /list لمعرفة الأرقام)", parse_mode="HTML")
+    return EDIT_ID
+
+async def edit_get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        p_id = int(update.message.text)
+        context.user_data['edit_id'] = p_id
+        
+        keyboard = [
+            [InlineKeyboardButton("💰 تعديل السعر", callback_data="edit_price")],
+            [InlineKeyboardButton("✍️ تعديل الاسم", callback_data="edit_name")],
+            [InlineKeyboardButton("📝 تعديل الوصف", callback_data="edit_desc")],
+        ]
+        await update.message.reply_text("ماذا تريدين أن تعدلي؟", reply_markup=InlineKeyboardMarkup(keyboard))
+        return EDIT_FIELD
+    except ValueError:
+        await update.message.reply_text("⚠️ الرجاء إرسال رقم صحيح.")
+        return EDIT_ID
+
+async def edit_choose_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data['edit_field'] = query.data # edit_price, edit_name, edit_desc
+    
+    await query.edit_message_text("✍️ أرسلي القيمة الجديدة:")
+    return EDIT_VALUE
+
+async def edit_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_value = update.message.text
+    p_id = context.user_data['edit_id']
+    field = context.user_data['edit_field']
+    
+    data = load_data()
+    for p in data["products"]:
+        if p["id"] == p_id:
+            if field == "edit_price":
+                try:
+                    p["price"] = int(new_value)
+                except ValueError:
+                    await update.message.reply_text("⚠️ السعر يجب أن يكون رقماً.")
+                    return EDIT_VALUE
+            elif field == "edit_name":
+                p["name"] = new_value
+            elif field == "edit_desc":
+                p["description"] = new_value
+            break
+    
+    save_data(data)
+    await update.message.reply_text(f"✅ تم تعديل المنتج (ID: {p_id}) بنجاح!\n\n(تذكير: المنشور في القناة لن يتحدث تلقائياً، ستحتاجين إلى إعادة نشر المنتج أو تعديله يدوياً).")
+    return ConversationHandler.END
+
+async def delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🗑️ أرسلي <b>ID</b> المنتج الذي تريدين حذفه:", parse_mode="HTML")
+    return DELETE_ID
+
+async def delete_get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        p_id = int(update.message.text)
+        context.user_data['delete_id'] = p_id
+        
+        # البحث عن المنتج لعرض اسمه في التأكيد
+        data = load_data()
+        product_name = "غير معروف"
+        for p in data["products"]:
+            if p["id"] == p_id:
+                product_name = p["name"]
+                break
+        
+        keyboard = [
+            [InlineKeyboardButton("✅ نعم، احذف", callback_data="confirm_delete_yes")],
+            [InlineKeyboardButton("❌ إلغاء", callback_data="confirm_delete_no")]
+        ]
+        await update.message.reply_text(
+            f"⚠️ هل أنت متأكدة من حذف المنتج:\n<b>{product_name}</b> (ID: {p_id})؟",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return DELETE_CONFIRM
+    except ValueError:
+        await update.message.reply_text("⚠️ الرجاء إرسال رقم صحيح.")
+        return DELETE_ID
+
+async def delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "confirm_delete_yes":
+        p_id = context.user_data['delete_id']
+        data = load_data()
+        data["products"] = [p for p in data["products"] if p["id"] != p_id]
+        save_data(data)
+        await query.edit_message_text(f"✅ تم حذف المنتج (ID: {p_id}) بنجاح!")
+    else:
+        await query.edit_message_text("❌ تم الإلغاء.")
+        
+    return ConversationHandler.END
+
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض إحصائيات المتجر"""
+    data = load_data()
+    products = data.get("products", [])
+    categories = data.get("categories", {})
+    
+    if not products:
+        await update.message.reply_text("📊 لا توجد منتجات في المتجر حالياً.")
+        return
+    
+    text = "📊 <b>إحصائيات المتجر:</b>\n\n"
+    total_products = len(products)
+    
+    # حساب عدد المنتجات في كل قسم
+    cat_counts = {}
+    for p in products:
+        cat = p.get("category", "other")
+        cat_counts[cat] = cat_counts.get(cat, 0) + 1
+        
+    for cat_id, cat_info in categories.items():
+        count = cat_counts.get(cat_id, 0)
+        if count > 0:
+            text += f"{cat_info['name']}: {count} منتج\n"
+    
+    text += f"\n📦 <b>الإجمالي: {total_products} منتج</b>"
+    
+    await update.message.reply_text(text, parse_mode="HTML")
 
 # ═══ Main ═══
 def main():
@@ -202,7 +352,18 @@ def main():
     )
     
     app = Application.builder().token(token).request(request).get_updates_request(request).build()
-        
+    
+    edit_handler = ConversationHandler(
+        entry_points=[CommandHandler("edit", edit_start)],
+        states={
+            EDIT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_get_id)],
+            EDIT_FIELD: [CallbackQueryHandler(edit_choose_field, pattern="^edit_")],
+            EDIT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_save)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    app.add_handler(edit_handler)
+
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("add", add_product_start)],
         states={
@@ -215,9 +376,21 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
+
+    delete_handler = ConversationHandler(
+        entry_points=[CommandHandler("delete", delete_start)],
+        states={
+            DELETE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_get_id)],
+            DELETE_CONFIRM: [CallbackQueryHandler(delete_confirm, pattern="^confirm_delete_")],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    app.add_handler(delete_handler)
     
     app.add_handler(conv_handler)
     app.add_handler(CommandHandler("cancel", cancel))
+    app.add_handler(CommandHandler("list", list_products))
+    app.add_handler(CommandHandler("stats", stats))
     
     print("🤖 بوت الإدارة يعمل...")
     app.run_polling()

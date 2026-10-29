@@ -42,26 +42,6 @@
   },
   "products": [
     {
-      "id": 1,
-      "category": "jalabib",
-      "name": "جلابية قطنية مطرزة",
-      "price": 5000,
-      "description": "جلابية قطنية 100%، مطرزة يدوياً.",
-      "attributes": {
-        "colors": [
-          "أحمر",
-          "أزرق",
-          "أخضر"
-        ],
-        "sizes": [
-          "S",
-          "M",
-          "L",
-          "XL"
-        ]
-      }
-    },
-    {
       "category": "jalabib",
       "attributes": {
         "colors": [
@@ -83,7 +63,7 @@
         "volume": "50"
       },
       "photo": "AgACAgQAAxkBAAMmauHBASw0cUPU00LWVlsz6nxt2TYAAlQPaxsoHxBT0g8kTqKY8KIBAAMCAAN5AAM9BA",
-      "name": "ارغان",
+      "name": "زيت الارغان",
       "price": 1500,
       "description": "راااائعة",
       "id": 3
@@ -103,6 +83,24 @@
       "price": 4800,
       "description": "الجلباب الذي يبحث عنه الكثير",
       "id": 4
+    },
+    {
+      "category": "jalabib",
+      "attributes": {
+        "colors": [
+          "الاسود.الازرق.الاخضر.البني.الرمادي"
+        ],
+        "sizes": [
+          "1",
+          "2",
+          "3"
+        ]
+      },
+      "photo": "AgACAgQAAxkBAANAauN1cjMoa1Y95N7c0xULew7AIogAAmMOaxseeSBTXbPn0Drc_fgBAAMCAAN5AAM9BA",
+      "name": "جلباب مربع قطعة واحدة",
+      "price": 3500,
+      "description": "فضفاض بقماش روعة دقة واتقان \nباختصار جلباب مميز",
+      "id": 5
     }
   ],
   "jalabib": [
