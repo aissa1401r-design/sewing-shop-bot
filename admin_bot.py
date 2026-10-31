@@ -183,16 +183,20 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     try:
-        await context.bot.send_photo(
+        sent_message = await context.bot.send_photo(
             chat_id=channel_id,
             photo=product['photo'],
             caption=caption,
             parse_mode="HTML"
         )
+        # ═══ حفظ message_id في المنتج ═══
+        product['message_id'] = sent_message.message_id
+        save_data(data) # إعادة حفظ البيانات
+        
         await update.message.reply_text("✅ تم إضافة المنتج ونشره في القناة بنجاح!")
     except Exception as e:
         await update.message.reply_text(f"⚠️ فشل النشر في القناة: {e}")
-    
+
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -249,12 +253,14 @@ async def edit_choose_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def edit_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_value = update.message.text
-    p_id = context.user_data['edit_id']
-    field = context.user_data['edit_field']
+    p_id = context.user_data.get('edit_id')
+    field = context.user_data.get('edit_field')
     
     data = load_data()
+    found = False
     for p in data["products"]:
         if p["id"] == p_id:
+            # 1. تحديث البيانات
             if field == "edit_price":
                 try:
                     p["price"] = int(new_value)
@@ -265,10 +271,43 @@ async def edit_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 p["name"] = new_value
             elif field == "edit_desc":
                 p["description"] = new_value
+            found = True
+            
+            # 2. تحديث المنشور في القناة (إذا كان لدينا message_id)
+            if "message_id" in p:
+                channel_id = int(os.getenv("CHANNEL_ID"))
+                # إعادة بناء النص
+                caption = f"✨ <b>{p['name']}</b>\n\n"
+                caption += f"💰 السعر: {p['price']} دج\n"
+                
+                ARABIC_NAMES = {"colors": "🎨 الألوان", "sizes": "📏 المقاسات", "volume": "🧴 السعة"}
+                for k, v in p.get('attributes', {}).items():
+                    arabic_name = ARABIC_NAMES.get(k, k)
+                    if isinstance(v, list):
+                        v = "، ".join([str(item).strip() for item in v])
+                    caption += f"{arabic_name}: {v}\n"
+                caption += f"📝 {p.get('description', '')}\n\n"
+                
+                smart_link = f"https://t.me/sewingFadha_il_bot?start=product_{p['id']}"
+                caption += f"🛒 <a href='{smart_link}'>اطلبي الآن</a>"
+                
+                try:
+                    await context.bot.edit_message_caption(
+                        chat_id=channel_id,
+                        message_id=p["message_id"],
+                        caption=caption,
+                        parse_mode="HTML"
+                    )
+                except Exception as e:
+                    print(f"⚠️ فشل تحديث المنشور: {e}")
             break
     
-    save_data(data)
-    await update.message.reply_text(f"✅ تم تعديل المنتج (ID: {p_id}) بنجاح!\n\n(تذكير: المنشور في القناة لن يتحدث تلقائياً، ستحتاجين إلى إعادة نشر المنتج أو تعديله يدوياً).")
+    if found:
+        save_data(data)
+        await update.message.reply_text(f"✅ تم تعديل المنتج (ID: {p_id}) وتحديث المنشور في القناة بنجاح!")
+    else:
+        await update.message.reply_text(f"⚠️ لم يتم العثور على منتج بالمعرف {p_id}.")
+        
     return ConversationHandler.END
 
 async def delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE):

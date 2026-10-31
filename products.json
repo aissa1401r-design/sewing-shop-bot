@@ -177,6 +177,27 @@
       "price": 2200,
       "description": "حجاب طويل ساتر يصلح للصلاة فقط",
       "id": 8
+    },
+    {
+      "category": "jalabib",
+      "attributes": {
+        "colors": [
+          "بني",
+          "اسود",
+          "ازرق"
+        ],
+        "sizes": [
+          "2",
+          "3",
+          "4"
+        ]
+      },
+      "photo": "AgACAgQAAxkBAAOWauZFd5t0QW0lNo_XuIbWbvuXAQoAAnIPaxugtjFTqhVaiiogWA8BAAMCAAN5AAM9BA",
+      "name": "جلباب بني باكمام نازلة",
+      "price": 4800,
+      "description": "جلباب واسع فضفاض وانيق \nروووعة",
+      "id": 9,
+      "message_id": 20
     }
   ],
   "jalabib": [
