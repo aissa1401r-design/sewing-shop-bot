@@ -45,10 +45,14 @@
       "category": "jalabib",
       "attributes": {
         "colors": [
-          "ازرق.احمر.بني"
+          "ازرق",
+          "احمر",
+          "بني"
         ],
         "sizes": [
-          "M.L.XL"
+          "M",
+          "L",
+          "XL"
         ]
       },
       "photo": "AgACAgQAAxkBAAMYauG-8c3JBgnJcwxzc8vOeqXPpzUAAkUPaxsoHxBTIawuG15EO98BAAMCAAN5AAM9BA",
@@ -72,10 +76,15 @@
       "category": "jalabib",
       "attributes": {
         "colors": [
-          "الاخضر.الاحمر.البني"
+          "الاخضر",
+          "الاحمر",
+          "البني"
         ],
         "sizes": [
-          "M/L/XL/XXL"
+          "M",
+          "L",
+          "XL",
+          "XXL"
         ]
       },
       "photo": "AgACAgQAAxkBAAMyauJoVAdgWTcysgdasWXLdZ69kNIAAnoQaxsoHxBTEumd48gWn0sBAAMCAAN5AAM9BA",
@@ -88,7 +97,11 @@
       "category": "jalabib",
       "attributes": {
         "colors": [
-          "الاسود.الازرق.الاخضر.البني.الرمادي"
+          "الاسود",
+          "الازرق",
+          "الاخضر",
+          "البني",
+          "الرمادي"
         ],
         "sizes": [
           "1",
@@ -101,6 +114,69 @@
       "price": 3500,
       "description": "فضفاض بقماش روعة دقة واتقان \nباختصار جلباب مميز",
       "id": 5
+    },
+    {
+      "category": "jalabib",
+      "attributes": {
+        "colors": [
+          "الاخضر",
+          "أحمر",
+          "ازرق",
+          "الرمادي"
+        ],
+        "sizes": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ]
+      },
+      "photo": "AgACAgQAAxkBAANpauTuOGkfUb_6QAABIFg06yppqQ80AAL7DWsboLYpUzyGC-1WigdqAQADAgADeQADPQQ",
+      "name": "جلباب فراشة قطعة واحدة",
+      "price": 3600,
+      "description": "جلباب خياطة محلية باتقان وعناية قماش خفيف رووعة",
+      "id": 6
+    },
+    {
+      "category": "jalabib",
+      "attributes": {
+        "colors": [
+          "البنفسجي",
+          "الازرق",
+          "الاخضر",
+          "البني"
+        ],
+        "sizes": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ]
+      },
+      "photo": "AgACAgQAAxkBAAN3auUHAS_tdDg3WbgG1wH__hrTRmQAApIOaxugtilTDNL3qJEu3YwBAAMCAAN5AAM9BA",
+      "name": "جلباب قطعتين مربع",
+      "price": 4500,
+      "description": "قماش ولا اروع اتقان وعناية",
+      "id": 7
+    },
+    {
+      "category": "jalabib",
+      "attributes": {
+        "colors": [
+          "أزرق",
+          "بنفسجي"
+        ],
+        "sizes": [
+          "1",
+          "2",
+          "3"
+        ]
+      },
+      "photo": "AgACAgQAAxkBAAOHauYQbe2mrSLv1NXRxCG8eBocbQsAAvkOaxugtjFTuQVsPtZPnvoBAAMCAAN5AAM9BA",
+      "name": "حجاب الصلاة",
+      "price": 2200,
+      "description": "حجاب طويل ساتر يصلح للصلاة فقط",
+      "id": 8
     }
   ],
   "jalabib": [
@@ -109,10 +185,15 @@
       "name": "جلباب قطعتين",
       "price": 5500,
       "colors": [
-        "أحمر"
+        "البنفسجي",
+        "بني",
+        "ازرق"
       ],
       "sizes": [
-        "M"
+        "M",
+        "L",
+        "XL",
+        "XXL"
       ],
       "description": "فضفاض واسع بقماش ولا اروع"
     }

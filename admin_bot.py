@@ -113,17 +113,21 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_dynamic_attr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     remaining = context.user_data.get('remaining_attrs', [])
-    attr = remaining.pop(0) 
+    attr = remaining.pop(0)
     
     value = update.message.text
-    if attr in ["colors", "sizes"]:
-        if "،" in value:
-            value = [v.strip() for v in value.split("،")]
-        else: 
-            value = [v.strip() for v in value.split(",")]
-            
-    context.user_data['new_product']['attributes'][attr] = value
     
+    # ═══ هذا الجزء هو الحل ═══
+    # إذا كانت السمة هي "الألوان" أو "المقاسات"، نحولها إلى قائمة
+    if attr in ["colors", "sizes"]:
+        # استبدال الفاصلة العربية والنقطة بفاصلة إنجليزية لتوحيد الفاصل
+        value = value.replace("،", ",").replace(".", ",")
+        # تقسيم النص بناءً على الفاصلة
+        value = [v.strip() for v in value.split(",") if v.strip()]
+    # ═══════════════════════
+    
+    context.user_data['new_product']['attributes'][attr] = value
+    # ..
     if remaining:
         next_attr = remaining[0]
         question = ATTR_QUESTIONS.get(next_attr, "أدخلي القيمة:")
