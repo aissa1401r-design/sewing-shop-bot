@@ -193,11 +193,32 @@
         ]
       },
       "photo": "AgACAgQAAxkBAAOWauZFd5t0QW0lNo_XuIbWbvuXAQoAAnIPaxugtjFTqhVaiiogWA8BAAMCAAN5AAM9BA",
-      "name": "جلباب بني باكمام نازلة",
+      "name": "جلباب باكمام نازلة",
       "price": 4800,
       "description": "جلباب واسع فضفاض وانيق \nروووعة",
       "id": 9,
       "message_id": 20
+    },
+    {
+      "category": "jalabib",
+      "attributes": {
+        "colors": [
+          "اسود",
+          "بنفسجي",
+          "اخضر"
+        ],
+        "sizes": [
+          "1",
+          "2",
+          "3"
+        ]
+      },
+      "photo": "AgACAgQAAxkBAAO2auZrKm7VS24GHJYmOhFwB18glqgAAsEPaxugtjFTLQpRm7m4tUsBAAMCAAN5AAM9BA",
+      "name": "جلباب بازرار في الرقبة",
+      "price": 3500,
+      "description": "جلباب عريض رووعة بقماش خفيف",
+      "id": 10,
+      "message_id": 21
     }
   ],
   "jalabib": [

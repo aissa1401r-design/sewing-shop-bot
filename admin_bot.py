@@ -6,7 +6,7 @@ Admin Bot for Sewing Shop
 import os
 import json
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.request import HTTPXRequest
 from telegram.ext import (
     Application, CommandHandler, ContextTypes,
@@ -44,6 +44,43 @@ def save_data(data): # ← تغير الاسم
 # ═══ التحقق من صاحبة المتجر ═══
 def is_admin(user_id):
     return True 
+
+async def start_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """القائمة الرئيسية للإدارة (أزرار ثابتة)"""
+    keyboard = [
+        [KeyboardButton("➕ إضافة منتج")],
+        [KeyboardButton("📦 عرض المنتجات"), KeyboardButton("📊 الإحصائيات")],
+        [KeyboardButton("🗑️ حذف منتج"), KeyboardButton("✏️ تعديل منتج")]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    await update.message.reply_text(
+        "أهلاً بك في لوحة تحكم المتجر 🌸\nاختر ما تريدين:",
+        reply_markup=reply_markup
+    )
+
+async def handle_admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """توجيه النصوص القادمة من الأزرار إلى الأوامر المناسبة"""
+    text = update.message.text
+    
+    if text == "➕ إضافة منتج":
+        # استدعاء دالة إضافة المنتج
+        await add_product_start(update, context)
+        
+    elif text == "📦 عرض المنتجات":
+        await list_products(update, context)
+        
+    elif text == "📊 الإحصائيات":
+        await stats(update, context)
+        
+    elif text == "🗑️ حذف منتج":
+        await delete_start(update, context)
+        
+    elif text == "✏️ تعديل منتج":
+        await edit_start(update, context)
+        
+    else:
+        await update.message.reply_text("⚠️ الرجاء اختيار زر من القائمة.")
 
 # ═══ إضافة منتج ═══
 async def add_product_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -396,17 +433,9 @@ def main():
     
     app = Application.builder().token(token).request(request).get_updates_request(request).build()
     
-    edit_handler = ConversationHandler(
-        entry_points=[CommandHandler("edit", edit_start)],
-        states={
-            EDIT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_get_id)],
-            EDIT_FIELD: [CallbackQueryHandler(edit_choose_field, pattern="^edit_")],
-            EDIT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_save)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
-    app.add_handler(edit_handler)
-
+    # ═══ 1. محادثات الإدارة (يجب أن تكون أولاً) ═══
+    
+    # 1.1 الإضافة
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("add", add_product_start)],
         states={
@@ -419,7 +448,21 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
+    app.add_handler(conv_handler)
 
+    # 1.2 التعديل
+    edit_handler = ConversationHandler(
+        entry_points=[CommandHandler("edit", edit_start)],
+        states={
+            EDIT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_get_id)],
+            EDIT_FIELD: [CallbackQueryHandler(edit_choose_field, pattern="^edit_")],
+            EDIT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_save)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    app.add_handler(edit_handler)
+
+    # 1.3 الحذف
     delete_handler = ConversationHandler(
         entry_points=[CommandHandler("delete", delete_start)],
         states={
@@ -429,14 +472,18 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)]
     )
     app.add_handler(delete_handler)
-    
-    app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("cancel", cancel))
+
+    # ═══ 2. الأوامر العادية ═══
+    app.add_handler(CommandHandler("start", start_admin))
     app.add_handler(CommandHandler("list", list_products))
     app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("cancel", cancel))
+
+    # ═══ 3. معالج الأزرار الثابتة (يجب أن يكون في النهاية) ═══
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_buttons))
     
     print("🤖 بوت الإدارة يعمل...")
     app.run_polling()
-
+    
 if __name__ == "__main__":
     main()
