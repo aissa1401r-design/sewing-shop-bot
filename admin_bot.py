@@ -420,6 +420,35 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += f"\n📦 <b>الإجمالي: {total_products} منتج</b>"
     
     await update.message.reply_text(text, parse_mode="HTML")
+async def orders_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض إحصائيات الطلبات"""
+    try:
+        with open("orders.json", "r", encoding="utf-8") as f:
+            orders = json.load(f)
+    except FileNotFoundError:
+        orders = []
+        
+    if not orders:
+        await update.message.reply_text("📊 لا توجد طلبات حتى الآن.")
+        return
+        
+    total = len(orders)
+    # حساب عدد الطلبات لكل منتج
+    product_counts = {}
+    for o in orders:
+        p_name = o.get("product", "غير محدد")
+        product_counts[p_name] = product_counts.get(p_name, 0) + 1
+        
+    text = f"📊 <b>إحصائيات الطلبات:</b>\n\n"
+    text += f"📦 إجمالي الطلبات: {total}\n\n"
+    text += "<b>المنتجات الأكثر طلباً:</b>\n"
+    
+    # ترتيب المنتجات حسب عدد الطلبات (الأكثر أولاً)
+    sorted_products = sorted(product_counts.items(), key=lambda x: x[1], reverse=True)
+    for p_name, count in sorted_products[:5]:  # أعلى 5 منتجات
+        text += f"🔹 {p_name}: {count} طلب\n"
+        
+    await update.message.reply_text(text, parse_mode="HTML")
 
 # ═══ Main ═══
 def main():
@@ -437,7 +466,10 @@ def main():
     
     # 1.1 الإضافة
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("add", add_product_start)],
+        entry_points=[
+            CommandHandler("add", add_product_start),
+            MessageHandler(filters.Regex("^➕ إضافة منتج$"), add_product_start) # ← أضف هذا
+        ],
         states={
             CHOOSE_CATEGORY: [CallbackQueryHandler(category_chosen, pattern="^cat_")],
             ASK_PHOTO: [MessageHandler(filters.PHOTO, get_photo)],
@@ -452,7 +484,11 @@ def main():
 
     # 1.2 التعديل
     edit_handler = ConversationHandler(
-        entry_points=[CommandHandler("edit", edit_start)],
+        entry_points=[
+            CommandHandler("edit", edit_start),
+            MessageHandler(filters.Regex("^✏️ تعديل منتج$"), edit_start) # ← أضف هذا
+      
+        ],
         states={
             EDIT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_get_id)],
             EDIT_FIELD: [CallbackQueryHandler(edit_choose_field, pattern="^edit_")],
@@ -464,7 +500,11 @@ def main():
 
     # 1.3 الحذف
     delete_handler = ConversationHandler(
-        entry_points=[CommandHandler("delete", delete_start)],
+        entry_points=[
+            CommandHandler("delete", delete_start),
+            MessageHandler(filters.Regex("^🗑️ حذف منتج$"), delete_start) # ← أضف هذا
+
+        ],
         states={
             DELETE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_get_id)],
             DELETE_CONFIRM: [CallbackQueryHandler(delete_confirm, pattern="^confirm_delete_")],
@@ -478,6 +518,7 @@ def main():
     app.add_handler(CommandHandler("list", list_products))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("cancel", cancel))
+    app.add_handler(CommandHandler("orders", orders_stats))
 
     # ═══ 3. معالج الأزرار الثابتة (يجب أن يكون في النهاية) ═══
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_buttons))

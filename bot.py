@@ -5,6 +5,7 @@ Sewing Shop Telegram Bot
 
 import json
 import os
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
@@ -389,6 +390,20 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         admin_message += f"📍 العنوان: {order.get('address')}\n"
         admin_message += f"🆔 حساب الزبونة: @{query.from_user.username or 'لا يوجد'}"
         
+                # ═══ حفظ الطلب في orders.json ═══
+        order_data = {
+            "date": str(datetime.now()),
+            "product": order.get('product'),
+            "color": order.get('اللون', ''),
+            "size": order.get('المقاس', ''),
+            "volume": order.get('السعة', ''),
+            "name": order.get('name'),
+            "phone": order.get('phone'),
+            "address": order.get('address'),
+            "username": query.from_user.username or "لا يوجد",
+        }
+        save_order(order_data)
+        # ═════════════════════════════════
         # 4. إرسال الإشعار للمجموعة (في الخلفية)
         try:
             admin_id = int(os.getenv("ADMIN_CHAT_ID", "-5454243830"))
@@ -434,6 +449,23 @@ async def go_back_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
     return ConversationHandler.END  # ← مهم جداً: إنهاء المحادثة
+def save_order(order_data):
+    """حفظ الطلب في ملف orders.json"""
+    file_path = "orders.json"
+    try:
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            with open(file_path, "r", encoding="utf-8") as f:
+                orders = json.load(f)
+        else:
+            orders = []
+        
+        # إضافة الطلب الجديد
+        orders.append(order_data)
+        
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(orders, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"⚠️ فشل حفظ الطلب: {e}")
 
 def main():
     token = load_token()

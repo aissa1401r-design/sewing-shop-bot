@@ -219,6 +219,49 @@
       "description": "جلباب عريض رووعة بقماش خفيف",
       "id": 10,
       "message_id": 21
+    },
+    {
+      "category": "jalabib",
+      "attributes": {
+        "colors": [
+          "الاسود",
+          "الازرق",
+          "البنفسجي"
+        ],
+        "sizes": [
+          "1",
+          "2",
+          "3"
+        ]
+      },
+      "photo": "AgACAgQAAxkBAAPQaueqqJiCJi-328r6MRxUXbYqdPUAAtoPaxsz1kFTaoW9iOjJgckBAAMCAAN5AAM9BA",
+      "name": "جلباب فراشة قطعتين",
+      "price": 4500,
+      "description": "جلباب فراشة عريض بقماش رووعة",
+      "id": 11,
+      "message_id": 22
+    },
+    {
+      "category": "jalabib",
+      "attributes": {
+        "colors": [
+          "الزرق",
+          "البني",
+          "الرمادي"
+        ],
+        "sizes": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ]
+      },
+      "photo": "AgACAgQAAxkBAAPeauewxVcLIqvjEIuKiq15g4O-8TwAAvYPaxsz1kFTyT2XZTY0T1kBAAMCAAN5AAM9BA",
+      "name": "جلباب فراشة قطعتين",
+      "price": 4500,
+      "description": "ادناء فضفاض مع تنورة رائعة",
+      "id": 12,
+      "message_id": 23
     }
   ],
   "jalabib": [
