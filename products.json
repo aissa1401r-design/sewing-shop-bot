@@ -239,7 +239,11 @@
       "price": 4500,
       "description": "جلباب فراشة عريض بقماش رووعة",
       "id": 11,
-      "message_id": 22
+      "message_id": 22,
+      "photos": [
+        "AgACAgQAAxkBAAPQaueqqJiCJi-328r6MRxUXbYqdPUAAtoPaxsz1kFTaoW9iOjJgckBAAMCAAN5AAM9BA",
+        "AgACAgQAAxkBAAIBRGrqIvE7zIWSyacKx2YZI7SpglW-AAILD2sb4zNRU-c6Q32wU9EQAQADAgADeQADPQQ"
+      ]
     },
     {
       "category": "jalabib",
@@ -261,7 +265,14 @@
       "price": 4500,
       "description": "ادناء فضفاض مع تنورة رائعة",
       "id": 12,
-      "message_id": 23
+      "message_id": 25,
+      "photos": [
+        "AgACAgQAAxkBAAPeauewxVcLIqvjEIuKiq15g4O-8TwAAvYPaxsz1kFTyT2XZTY0T1kBAAMCAAN5AAM9BA",
+        "AgACAgQAAxkBAAIBNmrqGoJVjh5HAg_ozU_lL3v6TmqbAAIED2sb4zNRU5Zay5p4yoAUAQADAgADeQADPQQ",
+        "AgACAgQAAxkBAAIBOGrqGuiVAX6dtyfIqqEJhxIyiwk7AAIFD2sb4zNRU50iZztUseeRAQADAgADeQADPQQ",
+        "AgACAgQAAxkBAAIBTGrqMTCBoUNEHrwZUhVpjKBFpJ2vAAImD2sb4zNRUz4NeXnHiATjAQADAgADeQADPQQ",
+        "AgACAgQAAxkBAAIBTmrqMUWDsVDLjRwmE6XzJiGVAAEbrQACKA9rG-MzUVO0UzNwY1O6sgEAAwIAA3kAAz0E"
+      ]
     }
   ],
   "jalabib": [

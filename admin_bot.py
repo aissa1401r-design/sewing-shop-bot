@@ -6,7 +6,7 @@ Admin Bot for Sewing Shop
 import os
 import json
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram import InputMediaPhoto, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.request import HTTPXRequest
 from telegram.ext import (
     Application, CommandHandler, ContextTypes,
@@ -21,6 +21,9 @@ CHOOSE_CATEGORY, ASK_PHOTO, ASK_NAME, ASK_PRICE, ASK_DYNAMIC_ATTR, ASK_DESC = ra
 EDIT_ID, EDIT_FIELD, EDIT_VALUE = range(10, 13) # أرقام جديدة لتجنب التعارض
 
 DELETE_ID, DELETE_CONFIRM = range(13, 15)
+
+# حالات إضافة صور للمنتج
+ASK_PHOTOS_ID, ASK_MORE_PHOTOS = range(20, 22)
 
 ATTR_QUESTIONS = {
     "colors": "🎨 ما الألوان المتاحة؟ (افصلي بينها بفاصلة)",
@@ -50,7 +53,8 @@ async def start_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [KeyboardButton("➕ إضافة منتج")],
         [KeyboardButton("📦 عرض المنتجات"), KeyboardButton("📊 الإحصائيات")],
-        [KeyboardButton("🗑️ حذف منتج"), KeyboardButton("✏️ تعديل منتج")]
+        [KeyboardButton("🗑️ حذف منتج"), KeyboardButton("✏️ تعديل منتج")],
+        [KeyboardButton("🖼️ إضافة صور"), KeyboardButton("📦 الطلبات")]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
@@ -64,8 +68,8 @@ async def handle_admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
     text = update.message.text
     
     if text == "➕ إضافة منتج":
-        # استدعاء دالة إضافة المنتج
-        await add_product_start(update, context)
+        # لا تستدعي add_product_start هنا، لأن ConversationHandler سيلتقطها من MessageHandler
+        pass 
         
     elif text == "📦 عرض المنتجات":
         await list_products(update, context)
@@ -73,15 +77,23 @@ async def handle_admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
     elif text == "📊 الإحصائيات":
         await stats(update, context)
         
+    elif text == "📦 الطلبات":
+        await orders_stats(update, context)
+        
     elif text == "🗑️ حذف منتج":
-        await delete_start(update, context)
+        # لا تستدعي delete_start هنا، ConversationHandler سيلتقطها
+        pass
         
     elif text == "✏️ تعديل منتج":
-        await edit_start(update, context)
-        
+        # لا تستدعي edit_start هنا، ConversationHandler سيلتقطها
+        pass
+    
+    elif text == "🖼️ إضافة صور":
+        await add_photos_start(update, context)
+
     else:
         await update.message.reply_text("⚠️ الرجاء اختيار زر من القائمة.")
-
+        
 # ═══ إضافة منتج ═══
 async def add_product_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -119,11 +131,26 @@ async def category_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ASK_PHOTO
 
 async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    photo_file_id = update.message.photo[-1].file_id
-    context.user_data['new_product']['photo'] = photo_file_id
+    """استقبال الصور (صورة واحدة أو ألبوم)"""
+    # حفظ الصور في قائمة
+    if 'photos' not in context.user_data['new_product']:
+        context.user_data['new_product']['photos'] = []
     
-    await update.message.reply_text("✍️ ما هو اسم المنتج؟")
-    return ASK_NAME
+    # إذا كانت رسالة عادية (صورة واحدة)
+    if update.message.photo:
+        photo_id = update.message.photo[-1].file_id
+        context.user_data['new_product']['photos'].append(photo_id)
+        
+        # نطلب من المستخدم إرسال المزيد أو الضغط على "تم"
+        keyboard = [[InlineKeyboardButton("✅ تم، انتقل للخطوة التالية", callback_data="photos_done")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            f"📸 تم استلام الصورة ({len(context.user_data['new_product']['photos'])}/10).\n"
+            "أرسلي صورة أخرى، أو اضغطي 'تم' للمتابعة.",
+            reply_markup=reply_markup
+        )
+        return ASK_PHOTO # البقاء في نفس الحالة لاستقبال المزيد
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['new_product']['name'] = update.message.text
@@ -450,6 +477,139 @@ async def orders_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await update.message.reply_text(text, parse_mode="HTML")
 
+async def add_photos_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بدء إضافة صور لمنتج موجود"""
+    await update.message.reply_text("🖼️ أرسلي <b>ID</b> المنتج الذي تريدين إضافة صور له:", parse_mode="HTML")
+    return ASK_PHOTOS_ID
+
+async def add_photos_get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """استلام ID المنتج والتحقق منه"""
+    try:
+        p_id = int(update.message.text)
+        data = load_data()
+        
+        # البحث عن المنتج
+        found = False
+        for p in data["products"]:
+            if p["id"] == p_id:
+                found = True
+                context.user_data['photo_product_id'] = p_id
+                # تهيئة قائمة الصور إذا لم تكن موجودة
+                if "photos" not in p:
+                    p["photos"] = [p.get("photo")] if p.get("photo") else []
+                break
+        
+        if not found:
+            await update.message.reply_text(f"⚠️ لم يتم العثور على منتج بالمعرف {p_id}.")
+            return ConversationHandler.END
+            
+        await update.message.reply_text("📸 ممتاز! أرسلي الصور الجديدة (واحدة تلو الأخرى).\nعندما تنتهين، اضغطي /done.")
+        return ASK_MORE_PHOTOS
+        
+    except ValueError:
+        await update.message.reply_text("⚠️ الرجاء إرسال رقم صحيح.")
+        return ASK_PHOTOS_ID
+
+async def add_more_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """استقبال الصور وحفظها"""
+    p_id = context.user_data.get('photo_product_id')
+    
+    # التحقق: هل المستخدم أرسل /done؟
+    if update.message.text == "/done":
+        # حفظ المنتج في context مؤقتاً
+        context.user_data['photo_update_id'] = p_id
+        
+        keyboard = [
+            [InlineKeyboardButton("✅ نعم، انشر ألبوماً جديداً", callback_data=f"album_yes_{p_id}")],
+            [InlineKeyboardButton("❌ لا، احتفظ بالمنشور القديم", callback_data=f"album_no_{p_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "⚠️ <b>تنبيه:</b> إذا اخترتِ نشر ألبوم جديد، سيتم حذف المنشور الحالي في القناة ونشره في مكان آخر (قد يتغير ترتيب القناة).\n\n"
+            "هل تريدين المتابعة؟",
+            parse_mode="HTML",
+            reply_markup=reply_markup
+        )
+        return ConversationHandler.END  # ننهي المحادثة مؤقتاً، وسنعالج الرد في button_handler
+    
+    # إذا كانت صورة
+    if update.message.photo:
+        photo_id = update.message.photo[-1].file_id
+        data = load_data()
+        
+        for p in data["products"]:
+            if p["id"] == p_id:
+                if "photos" not in p:
+                    p["photos"] = [p.get("photo")] if p.get("photo") else []
+                p["photos"].append(photo_id)
+                break
+        
+        save_data(data)
+        await update.message.reply_text(f"✅ تم حفظ الصورة. أرسلي صورة أخرى أو /done للانتهاء.")
+        return ASK_MORE_PHOTOS
+        
+    await update.message.reply_text("⚠️ الرجاء إرسال صورة أو /done للانتهاء.")
+    return ASK_MORE_PHOTOS
+
+async def handle_album_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالجة اختيار نشر الألبوم أو الاحتفاظ بالمنشور القديم"""
+    query = update.callback_query
+    await query.answer()
+    
+    data_choice = query.data.split("_")
+    action = data_choice[1] # yes أو no
+    p_id = int(data_choice[2])
+    
+    data = load_data()
+    
+    if action == "no":
+        await query.edit_message_text("✅ تم حفظ الصور في البوت، لكن المنشور القديم في القناة لم يتغير.")
+        return
+    
+    # إذا اختار "نعم" (نشر ألبوم جديد)
+    for p in data["products"]:
+        if p["id"] == p_id:
+            channel_id = int(os.getenv("CHANNEL_ID"))
+            
+            # 1. حذف المنشور القديم
+            if "message_id" in p:
+                try:
+                    await context.bot.delete_message(chat_id=channel_id, message_id=p["message_id"])
+                except Exception as e:
+                    print(f"⚠️ فشل حذف المنشور: {e}")
+            
+            # 2. بناء الكابشن
+            caption = f"✨ <b>{p['name']}</b>\n\n"
+            caption += f"💰 السعر: {p['price']} دج\n"
+            ARABIC_NAMES = {"colors": "🎨 الألوان", "sizes": "📏 المقاسات", "volume": "🧴 السعة"}
+            for k, v in p.get('attributes', {}).items():
+                arabic_name = ARABIC_NAMES.get(k, k)
+                if isinstance(v, list):
+                    v = "، ".join([str(item).strip() for item in v])
+                caption += f"{arabic_name}: {v}\n"
+            caption += f"📝 {p.get('description', '')}\n\n"
+            smart_link = f"https://t.me/sewingFadha_il_bot?start=product_{p['id']}"
+            caption += f"🛒 <a href='{smart_link}'>اطلبي الآن</a>"
+            
+            # 3. إرسال الألبوم
+            photos = p.get("photos", [])
+            media_group = []
+            for i, photo in enumerate(photos):
+                if i == 0:
+                    media_group.append(InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"))
+                else:
+                    media_group.append(InputMediaPhoto(media=photo))
+            
+            try:
+                sent_messages = await context.bot.send_media_group(chat_id=channel_id, media=media_group)
+                p["message_id"] = sent_messages[0].message_id
+                save_data(data)
+                await query.edit_message_text("✅ تم نشر ألبوم الصور الجديد في القناة!")
+            except Exception as e:
+                await query.edit_message_text(f"⚠️ فشل النشر: {e}")
+            break
+
 # ═══ Main ═══
 def main():
     token = load_token()
@@ -513,7 +673,25 @@ def main():
     )
     app.add_handler(delete_handler)
 
+        # 1.4 إضافة صور
+    photos_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("add_photos", add_photos_start),
+            MessageHandler(filters.Regex("^🖼️ إضافة صور$"), add_photos_start)
+        ],
+        states={
+            ASK_PHOTOS_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_photos_get_id)],
+            ASK_MORE_PHOTOS: [
+                MessageHandler(filters.PHOTO, add_more_photos),
+                CommandHandler("done", add_more_photos)
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)]
+    )
+    app.add_handler(photos_handler)
+
     # ═══ 2. الأوامر العادية ═══
+    app.add_handler(CallbackQueryHandler(handle_album_choice, pattern="^album_"))
     app.add_handler(CommandHandler("start", start_admin))
     app.add_handler(CommandHandler("list", list_products))
     app.add_handler(CommandHandler("stats", stats))
