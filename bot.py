@@ -211,7 +211,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
-            "أهلاً بك في متجر الخياطة اليدوية 🌸\n\nاختر ما يهمك:",
+            "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
             reply_markup=reply_markup
         )
     # ═══════════════════════════════════
@@ -469,13 +469,15 @@ def save_order(order_data):
 
 def main():
     token = load_token()
-
+    
+    # ═══ إعدادات الشبكة ═══
     request = HTTPXRequest(
         connect_timeout=30.0,
         read_timeout=30.0,
         write_timeout=30.0,
         pool_timeout=30.0,
     )
+    
     app = (
         Application.builder()
         .token(token)
@@ -484,35 +486,48 @@ def main():
         .build()
     )
 
+    # ═══ إضافة المعالجات (كما هي) ═══
     app.add_handler(CommandHandler("start", start))
-
     conv_handler = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(order_start, pattern="^order_start$"),
             CallbackQueryHandler(order_start, pattern="^order_start_red$"),
-            CallbackQueryHandler(order_start, pattern="^order_dyn_.*") # ← الجديد
+            CallbackQueryHandler(order_start, pattern="^order_dyn_.*")
         ],
         states={
-            ASK_DYNAMIC_ATTR: [CallbackQueryHandler(get_dynamic_attr, pattern="^attr_.*")], # ← الجديد
+            ASK_DYNAMIC_ATTR: [CallbackQueryHandler(get_dynamic_attr, pattern="^attr_.*")],
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
             ASK_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_address)],
             CONFIRM: [CallbackQueryHandler(confirm_order, pattern="^confirm_")],
         },
-        fallbacks=[
-            CommandHandler("start", start),
-            CallbackQueryHandler(go_back_home, pattern="^back_home$")
-        ],
+        fallbacks=[CommandHandler("start", start)],
         conversation_timeout=300,
         per_message=False        
     )
-
     app.add_handler(conv_handler)
-
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("بوت المتجر يعمل.....")
-    app.run_polling()
+    # ═══ اكتشاف بيئة التشغيل ═══
+    # Render يوفر متغير بيئة اسمه RENDER
+    is_render = os.environ.get("RENDER") is not None
+    webhook_url = os.environ.get("WEBHOOK_URL")
+
+    if is_render and webhook_url:
+        # ═══ وضع Webhook (على Render) ═══
+        port = int(os.environ.get("PORT", 8080))
+        print(f"🚀 تشغيل البوت في وضع Webhook على المنفذ {port}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path="webhook",
+            webhook_url=f"{webhook_url}/webhook",
+            drop_pending_updates=True
+        )
+    else:
+        # ═══ وضع Polling (على جهازك المحلي) ═══
+        print("🤖 تشغيل البوت في وضع Polling (محلي)")
+        app.run_polling()
 
 if __name__ == "__main__":
     main()

@@ -6,6 +6,7 @@ Admin Bot for Sewing Shop
 import os
 import json
 from dotenv import load_dotenv
+from database import load_products, save_product, update_product, delete_product 
 from telegram import InputMediaPhoto, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.request import HTTPXRequest
 from telegram.ext import (
@@ -202,20 +203,29 @@ async def get_dynamic_attr(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_DESC
 
 async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """حفظ المنتج في Supabase والنشر في القناة"""
     context.user_data['new_product']['description'] = update.message.text
     product = context.user_data['new_product']
     
-    data = load_data()
-    all_ids = [p.get("id", 0) for p in data["products"]]
-    new_id = max(all_ids, default=0) + 1
-    product['id'] = new_id
-    data["products"].append(product)
-    save_data(data)
+    # ═══ 1. تجهيز البيانات للحفظ في Supabase ═══
+    product_data = {
+        "name": product['name'],
+        "price": product['price'],
+        "category": product['category'],
+        "description": product['description'],
+        "attributes": product.get('attributes', {}),
+        "photo": product.get('photo'),
+        "photos": product.get('photos', [product.get('photo')]) if product.get('photo') else []
+    }
     
+    # ═══ 2. حفظ المنتج في قاعدة البيانات ═══
+    saved_product = save_product(product_data)
+    new_id = saved_product[0]['id'] if saved_product else 0
+    
+    # ═══ 3. تجهيز النص للقناة ═══
     channel_id = int(os.getenv("CHANNEL_ID"))
     smart_link = f"https://t.me/sewingFadha_il_bot?start=product_{new_id}"
     
-        # ═══ تجهيز نص السمات للعرض (بالعربية) ═══
     ARABIC_NAMES = {
         "colors": "🎨 الألوان",
         "sizes": "📏 المقاسات",
@@ -226,67 +236,136 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     attributes_text = ""
     for k, v in product['attributes'].items():
-        # ترجمة اسم السمة
-        arabic_name = ARABIC_NAMES.get(k, k) 
-        
-        # معالجة القوائم (مثل الألوان والمقاسات)
+        arabic_name = ARABIC_NAMES.get(k, k)
         if isinstance(v, list):
-            # تنظيف العناصر من أي مسافات زائدة
             cleaned_v = [str(item).strip() for item in v]
-            # دمجها بفاصلة عربية
             v = "، ".join(cleaned_v)
-            
         attributes_text += f"{arabic_name}: {v}\n"
 
     caption = (
         f"✨ <b>{product['name']}</b>\n\n"
         f"💰 السعر: {product['price']} دج\n"
         f"{attributes_text}"
-        f"📝 {product['description']}\n\n" # ← تغير desc إلى description
+        f"📝 {product['description']}\n\n"
         f"🛒 <a href='{smart_link}'>اطلبي الآن</a>"
     )
     
+    # ═══ 4. النشر في القناة وحفظ message_id ═══
+    first_photo = product['photos'][0] if product.get('photos') else None
+    if not first_photo:
+        await update.message.reply_text("⚠️ لا توجد صورة لهذا المنتج!")
+        return ConversationHandler.END
+    # ═══ 4. النشر في القناة (ألبوم صور) وحفظ message_id ═══
     try:
-        sent_message = await context.bot.send_photo(
-            chat_id=channel_id,
-            photo=product['photo'],
-            caption=caption,
-            parse_mode="HTML"
-        )
-        # ═══ حفظ message_id في المنتج ═══
-        product['message_id'] = sent_message.message_id
-        save_data(data) # إعادة حفظ البيانات
+        photos = product.get('photos', [])
+        if not photos:
+            await update.message.reply_text("⚠️ لا توجد صور لهذا المنتج!")
+            return ConversationHandler.END
+            
+        # إذا كانت هناك صورة واحدة فقط
+        if len(photos) == 1:
+            sent_message = await context.bot.send_photo(
+                chat_id=channel_id,
+                photo=photos[0],
+                caption=caption,
+                parse_mode="HTML"
+            )
+            update_product(new_id, {"message_id": sent_message.message_id})
+        else:
+            # إذا كانت هناك عدة صور (ألبوم)
+            media_group = []
+            for i, photo in enumerate(photos[:10]): # التليجرام يسمح بـ 10 صور كحد أقصى
+                if i == 0:
+                    # الصورة الأولى تحمل النص (caption)
+                    media_group.append(InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"))
+                else:
+                    media_group.append(InputMediaPhoto(media=photo))
+            
+            sent_messages = await context.bot.send_media_group(
+                chat_id=channel_id,
+                media=media_group
+            )
+            # نحفظ message_id للصورة الأولى
+            if sent_messages:
+                update_product(new_id, {"message_id": sent_messages[0].message_id})
         
         await update.message.reply_text("✅ تم إضافة المنتج ونشره في القناة بنجاح!")
     except Exception as e:
         await update.message.reply_text(f"⚠️ فشل النشر في القناة: {e}")
-
-    return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ تم الإلغاء.")
     return ConversationHandler.END
     
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """عرض جميع المنتجات في بوت الإدارة"""
-    data = load_data()
-    products = data.get("products", [])
+    """عرض جميع المنتجات من Supabase"""
+    try:
+        products = load_products()  # ← تقرأ من Supabase
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ فشل جلب المنتجات: {e}")
+        return
     
     if not products:
         await update.message.reply_text("📭 لا توجد منتجات حالياً.")
         return
     
     text = "📦 <b>قائمة المنتجات الحالية:</b>\n\n"
+    ARABIC_NAMES = {
+        "jalabib": "👗 جلابيب",
+        "accessories": "💍 أكسسوارات",
+        "perfumes": "🧴 عطور",
+        "oils": "🌿 زيوت",
+        "home": "🏠 مستلزمات منزلية",
+        "other": "🛍️ آخر"
+    }
+    
     for p in products:
         # جلب اسم القسم
         cat_id = p.get("category", "")
-        cat_name = data["categories"].get(cat_id, {}).get("name", "غير محدد")
+        cat_name = ARABIC_NAMES.get(cat_id, cat_id)
         
         text += f"🆔 <b>ID: {p['id']}</b> | {p['name']}\n"
         text += f"   💰 السعر: {p['price']} دج | القسم: {cat_name}\n\n"
     
     text += "💡 <i>للتعديل أو الحذف، استخدم الأوامر /edit أو /delete</i>"
     await update.message.reply_text(text, parse_mode="HTML")
+
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عرض إحصائيات المتجر من Supabase"""
+    products = load_products()  # ← من Supabase
+    
+    if not products:
+        await update.message.reply_text("📊 لا توجد منتجات في المتجر حالياً.")
+        return
+    
+    text = "📊 <b>إحصائيات المتجر:</b>\n\n"
+    total_products = len(products)
+    
+    # حساب عدد المنتجات في كل قسم
+    cat_counts = {}
+    for p in products:
+        cat = p.get("category", "other")
+        cat_counts[cat] = cat_counts.get(cat, 0) + 1
+        
+    # عرض الأقسام (نحتاج جلب الأقسام من ملف JSON أو تعريفها يدوياً)
+    # مؤقتاً، سنعرض الأقسام التي لديها منتجات فقط
+    ARABIC_CATEGORIES = {
+        "jalabib": "👗 جلابيب",
+        "accessories": "💍 أكسسوارات",
+        "perfumes": "🧴 عطور",
+        "oils": "🌿 زيوت",
+        "home": "🏠 مستلزمات منزلية",
+        "other": "🛍️ آخر"
+    }
+    
+    for cat_id, count in cat_counts.items():
+        cat_name = ARABIC_CATEGORIES.get(cat_id, cat_id)
+        text += f"{cat_name}: {count} منتج\n"
+    
+    text += f"\n📦 <b>الإجمالي: {total_products} منتج</b>"
+    
+    await update.message.reply_text(text, parse_mode="HTML")
+
 async def edit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🛠️ أرسلي <b>ID</b> المنتج الذي تريدين تعديله:\n(استخدمي /list لمعرفة الأرقام)", parse_mode="HTML")
     return EDIT_ID
@@ -320,77 +399,84 @@ async def edit_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p_id = context.user_data.get('edit_id')
     field = context.user_data.get('edit_field')
     
-    data = load_data()
-    found = False
-    for p in data["products"]:
-        if p["id"] == p_id:
-            # 1. تحديث البيانات
-            if field == "edit_price":
-                try:
-                    p["price"] = int(new_value)
-                except ValueError:
-                    await update.message.reply_text("⚠️ السعر يجب أن يكون رقماً.")
-                    return EDIT_VALUE
-            elif field == "edit_name":
-                p["name"] = new_value
-            elif field == "edit_desc":
-                p["description"] = new_value
-            found = True
-            
-            # 2. تحديث المنشور في القناة (إذا كان لدينا message_id)
-            if "message_id" in p:
-                channel_id = int(os.getenv("CHANNEL_ID"))
-                # إعادة بناء النص
-                caption = f"✨ <b>{p['name']}</b>\n\n"
-                caption += f"💰 السعر: {p['price']} دج\n"
-                
-                ARABIC_NAMES = {"colors": "🎨 الألوان", "sizes": "📏 المقاسات", "volume": "🧴 السعة"}
-                for k, v in p.get('attributes', {}).items():
-                    arabic_name = ARABIC_NAMES.get(k, k)
-                    if isinstance(v, list):
-                        v = "، ".join([str(item).strip() for item in v])
-                    caption += f"{arabic_name}: {v}\n"
-                caption += f"📝 {p.get('description', '')}\n\n"
-                
-                smart_link = f"https://t.me/sewingFadha_il_bot?start=product_{p['id']}"
-                caption += f"🛒 <a href='{smart_link}'>اطلبي الآن</a>"
-                
-                try:
-                    await context.bot.edit_message_caption(
-                        chat_id=channel_id,
-                        message_id=p["message_id"],
-                        caption=caption,
-                        parse_mode="HTML"
-                    )
-                except Exception as e:
-                    print(f"⚠️ فشل تحديث المنشور: {e}")
-            break
-    
-    if found:
-        save_data(data)
-        await update.message.reply_text(f"✅ تم تعديل المنتج (ID: {p_id}) وتحديث المنشور في القناة بنجاح!")
-    else:
-        await update.message.reply_text(f"⚠️ لم يتم العثور على منتج بالمعرف {p_id}.")
-        
-    return ConversationHandler.END
+    # 1. تجهيز البيانات للتحديث
+    update_data = {}
+    if field == "edit_price":
+        try:
+            update_data["price"] = int(new_value)
+        except ValueError:
+            await update.message.reply_text("⚠️ السعر يجب أن يكون رقماً.")
+            return EDIT_VALUE
+    elif field == "edit_name":
+        update_data["name"] = new_value
+    elif field == "edit_desc":
+        update_data["description"] = new_value
 
-async def delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🗑️ أرسلي <b>ID</b> المنتج الذي تريدين حذفه:", parse_mode="HTML")
-    return DELETE_ID
+    # 2. تحديث المنتج في Supabase
+    try:
+        updated = update_product(p_id, update_data)
+        if not updated:
+            await update.message.reply_text(f"⚠️ لم يتم العثور على منتج بالمعرف {p_id}.")
+            return ConversationHandler.END
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ فشل التحديث في قاعدة البيانات: {e}")
+        return ConversationHandler.END
+
+    # 3. تحديث المنشور في القناة (إذا كان له message_id)
+    try:
+        # جلب بيانات المنتج المحدثة من Supabase
+        products = load_products()
+        p = next((item for item in products if item["id"] == p_id), None)
+        
+        if p and p.get("message_id"):
+            channel_id = int(os.getenv("CHANNEL_ID"))
+            
+            # بناء الكابشن الجديد
+            caption = f"✨ <b>{p['name']}</b>\n\n"
+            caption += f"💰 السعر: {p['price']} دج\n"
+            
+            ARABIC_NAMES = {"colors": "🎨 الألوان", "sizes": "📏 المقاسات", "volume": "🧴 السعة"}
+            for k, v in p.get('attributes', {}).items():
+                arabic_name = ARABIC_NAMES.get(k, k)
+                if isinstance(v, list):
+                    v = "، ".join([str(item).strip() for item in v])
+                caption += f"{arabic_name}: {v}\n"
+            caption += f"📝 {p.get('description', '')}\n\n"
+            
+            smart_link = f"https://t.me/sewingFadha_il_bot?start=product_{p['id']}"
+            caption += f"🛒 <a href='{smart_link}'>اطلبي الآن</a>"
+            
+            await context.bot.edit_message_caption(
+                chat_id=channel_id,
+                message_id=p["message_id"],
+                caption=caption,
+                parse_mode="HTML"
+            )
+    except Exception as e:
+        print(f"⚠️ فشل تحديث المنشور في القناة: {e}")
+
+    await update.message.reply_text(f"✅ تم تعديل المنتج (ID: {p_id}) وتحديث المنشور في القناة!")
+    return ConversationHandler.END
 
 async def delete_get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         p_id = int(update.message.text)
         context.user_data['delete_id'] = p_id
         
-        # البحث عن المنتج لعرض اسمه في التأكيد
-        data = load_data()
+        # البحث عن المنتج في Supabase
+        products = load_products()
         product_name = "غير معروف"
-        for p in data["products"]:
+        found = False
+        for p in products:
             if p["id"] == p_id:
                 product_name = p["name"]
+                found = True
                 break
         
+        if not found:
+            await update.message.reply_text(f"⚠️ لم يتم العثور على منتج بالمعرف {p_id}.")
+            return ConversationHandler.END
+
         keyboard = [
             [InlineKeyboardButton("✅ نعم، احذف", callback_data="confirm_delete_yes")],
             [InlineKeyboardButton("❌ إلغاء", callback_data="confirm_delete_no")]
@@ -405,62 +491,21 @@ async def delete_get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ الرجاء إرسال رقم صحيح.")
         return DELETE_ID
 
-async def delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data == "confirm_delete_yes":
-        p_id = context.user_data['delete_id']
-        data = load_data()
-        data["products"] = [p for p in data["products"] if p["id"] != p_id]
-        save_data(data)
-        await query.edit_message_text(f"✅ تم حذف المنتج (ID: {p_id}) بنجاح!")
-    else:
-        await query.edit_message_text("❌ تم الإلغاء.")
-        
-    return ConversationHandler.END
-
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """عرض إحصائيات المتجر"""
-    data = load_data()
-    products = data.get("products", [])
-    categories = data.get("categories", {})
-    
-    if not products:
-        await update.message.reply_text("📊 لا توجد منتجات في المتجر حالياً.")
-        return
-    
-    text = "📊 <b>إحصائيات المتجر:</b>\n\n"
-    total_products = len(products)
-    
-    # حساب عدد المنتجات في كل قسم
-    cat_counts = {}
-    for p in products:
-        cat = p.get("category", "other")
-        cat_counts[cat] = cat_counts.get(cat, 0) + 1
-        
-    for cat_id, cat_info in categories.items():
-        count = cat_counts.get(cat_id, 0)
-        if count > 0:
-            text += f"{cat_info['name']}: {count} منتج\n"
-    
-    text += f"\n📦 <b>الإجمالي: {total_products} منتج</b>"
-    
-    await update.message.reply_text(text, parse_mode="HTML")
 async def orders_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """عرض إحصائيات الطلبات"""
+    """عرض إحصائيات الطلبات من Supabase"""
     try:
-        with open("orders.json", "r", encoding="utf-8") as f:
-            orders = json.load(f)
-    except FileNotFoundError:
-        orders = []
+        # جلب الطلبات من Supabase (نحتاج لاستيراد get_orders)
+        from database import get_orders
+        orders = get_orders()
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ فشل جلب الطلبات: {e}")
+        return
         
     if not orders:
         await update.message.reply_text("📊 لا توجد طلبات حتى الآن.")
         return
         
     total = len(orders)
-    # حساب عدد الطلبات لكل منتج
     product_counts = {}
     for o in orders:
         p_name = o.get("product", "غير محدد")
@@ -470,34 +515,24 @@ async def orders_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += f"📦 إجمالي الطلبات: {total}\n\n"
     text += "<b>المنتجات الأكثر طلباً:</b>\n"
     
-    # ترتيب المنتجات حسب عدد الطلبات (الأكثر أولاً)
     sorted_products = sorted(product_counts.items(), key=lambda x: x[1], reverse=True)
-    for p_name, count in sorted_products[:5]:  # أعلى 5 منتجات
+    for p_name, count in sorted_products[:5]:
         text += f"🔹 {p_name}: {count} طلب\n"
         
     await update.message.reply_text(text, parse_mode="HTML")
 
 async def add_photos_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """بدء إضافة صور لمنتج موجود"""
     await update.message.reply_text("🖼️ أرسلي <b>ID</b> المنتج الذي تريدين إضافة صور له:", parse_mode="HTML")
     return ASK_PHOTOS_ID
 
 async def add_photos_get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """استلام ID المنتج والتحقق منه"""
     try:
         p_id = int(update.message.text)
-        data = load_data()
+        context.user_data['photo_product_id'] = p_id
         
-        # البحث عن المنتج
-        found = False
-        for p in data["products"]:
-            if p["id"] == p_id:
-                found = True
-                context.user_data['photo_product_id'] = p_id
-                # تهيئة قائمة الصور إذا لم تكن موجودة
-                if "photos" not in p:
-                    p["photos"] = [p.get("photo")] if p.get("photo") else []
-                break
+        # التحقق من وجود المنتج في Supabase
+        products = load_products()
+        found = any(p["id"] == p_id for p in products)
         
         if not found:
             await update.message.reply_text(f"⚠️ لم يتم العثور على منتج بالمعرف {p_id}.")
@@ -505,52 +540,63 @@ async def add_photos_get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         await update.message.reply_text("📸 ممتاز! أرسلي الصور الجديدة (واحدة تلو الأخرى).\nعندما تنتهين، اضغطي /done.")
         return ASK_MORE_PHOTOS
-        
     except ValueError:
         await update.message.reply_text("⚠️ الرجاء إرسال رقم صحيح.")
         return ASK_PHOTOS_ID
 
 async def add_more_photos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """استقبال الصور وحفظها"""
-    p_id = context.user_data.get('photo_product_id')
-    
-    # التحقق: هل المستخدم أرسل /done؟
-    if update.message.text == "/done":
-        # حفظ المنتج في context مؤقتاً
-        context.user_data['photo_update_id'] = p_id
+    try:
+        p_id = context.user_data.get('photo_product_id')
         
-        keyboard = [
-            [InlineKeyboardButton("✅ نعم، انشر ألبوماً جديداً", callback_data=f"album_yes_{p_id}")],
-            [InlineKeyboardButton("❌ لا، احتفظ بالمنشور القديم", callback_data=f"album_no_{p_id}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # إذا أرسل المستخدم /done
+        if update.message.text == "/done":
+            context.user_data['photo_update_id'] = p_id
+            keyboard = [
+                [InlineKeyboardButton("✅ نعم، انشر ألبوماً جديداً", callback_data=f"album_yes_{p_id}")],
+                [InlineKeyboardButton("❌ لا، احتفظ بالمنشور القديم", callback_data=f"album_no_{p_id}")]
+            ]
+            await update.message.reply_text(
+                "⚠️ <b>تنبيه:</b> إذا اخترتِ نشر ألبوم جديد، سيتم حذف المنشور الحالي في القناة ونشره في مكان آخر.\n\n"
+                "هل تريدين المتابعة؟",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            return ConversationHandler.END
         
-        await update.message.reply_text(
-            "⚠️ <b>تنبيه:</b> إذا اخترتِ نشر ألبوم جديد، سيتم حذف المنشور الحالي في القناة ونشره في مكان آخر (قد يتغير ترتيب القناة).\n\n"
-            "هل تريدين المتابعة؟",
-            parse_mode="HTML",
-            reply_markup=reply_markup
-        )
-        return ConversationHandler.END  # ننهي المحادثة مؤقتاً، وسنعالج الرد في button_handler
-    
-    # إذا كانت صورة
-    if update.message.photo:
-        photo_id = update.message.photo[-1].file_id
-        data = load_data()
-        
-        for p in data["products"]:
-            if p["id"] == p_id:
-                if "photos" not in p:
-                    p["photos"] = [p.get("photo")] if p.get("photo") else []
-                p["photos"].append(photo_id)
-                break
-        
-        save_data(data)
-        await update.message.reply_text(f"✅ تم حفظ الصورة. أرسلي صورة أخرى أو /done للانتهاء.")
+        # إذا أرسل صورة
+        if update.message.photo:
+            photo_id = update.message.photo[-1].file_id
+            
+            products = load_products()
+            p = next((item for item in products if item["id"] == p_id), None)
+            
+            if not p:
+                await update.message.reply_text("⚠️ لم يتم العثور على المنتج.")
+                return ConversationHandler.END
+                
+            # جلب الصور الحالية
+            photos = p.get("photos") or []
+            if isinstance(photos, str):
+                import json
+                photos = json.loads(photos)
+            if not isinstance(photos, list):
+                photos = []
+                
+            photos.append(photo_id)
+            
+            # تحديث المنتج في Supabase
+            update_product(p_id, {"photos": photos})
+            
+            await update.message.reply_text(f"✅ تم حفظ الصورة. أرسلي صورة أخرى أو /done للانتهاء.")
+            return ASK_MORE_PHOTOS
+            
+        await update.message.reply_text("⚠️ الرجاء إرسال صورة أو /done للانتهاء.")
         return ASK_MORE_PHOTOS
         
-    await update.message.reply_text("⚠️ الرجاء إرسال صورة أو /done للانتهاء.")
-    return ASK_MORE_PHOTOS
+    except Exception as e:
+        print(f"🔴 خطأ في add_more_photos: {e}")
+        await update.message.reply_text(f"⚠️ حدث خطأ غير متوقع: {e}")
+        return ASK_MORE_PHOTOS
 
 async def handle_album_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة اختيار نشر الألبوم أو الاحتفاظ بالمنشور القديم"""
@@ -561,54 +607,106 @@ async def handle_album_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
     action = data_choice[1] # yes أو no
     p_id = int(data_choice[2])
     
-    data = load_data()
+    # ═══ جلب المنتج من Supabase ═══
+    products = load_products()
+    p = next((item for item in products if item["id"] == p_id), None)
+    
+    if not p:
+        await query.edit_message_text(f"⚠️ لم يتم العثور على منتج بالمعرف {p_id}.")
+        return
     
     if action == "no":
         await query.edit_message_text("✅ تم حفظ الصور في البوت، لكن المنشور القديم في القناة لم يتغير.")
         return
     
     # إذا اختار "نعم" (نشر ألبوم جديد)
-    for p in data["products"]:
-        if p["id"] == p_id:
-            channel_id = int(os.getenv("CHANNEL_ID"))
-            
-            # 1. حذف المنشور القديم
-            if "message_id" in p:
-                try:
-                    await context.bot.delete_message(chat_id=channel_id, message_id=p["message_id"])
-                except Exception as e:
-                    print(f"⚠️ فشل حذف المنشور: {e}")
-            
-            # 2. بناء الكابشن
-            caption = f"✨ <b>{p['name']}</b>\n\n"
-            caption += f"💰 السعر: {p['price']} دج\n"
-            ARABIC_NAMES = {"colors": "🎨 الألوان", "sizes": "📏 المقاسات", "volume": "🧴 السعة"}
-            for k, v in p.get('attributes', {}).items():
-                arabic_name = ARABIC_NAMES.get(k, k)
-                if isinstance(v, list):
-                    v = "، ".join([str(item).strip() for item in v])
-                caption += f"{arabic_name}: {v}\n"
-            caption += f"📝 {p.get('description', '')}\n\n"
-            smart_link = f"https://t.me/sewingFadha_il_bot?start=product_{p['id']}"
-            caption += f"🛒 <a href='{smart_link}'>اطلبي الآن</a>"
-            
-            # 3. إرسال الألبوم
-            photos = p.get("photos", [])
-            media_group = []
-            for i, photo in enumerate(photos):
-                if i == 0:
-                    media_group.append(InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"))
-                else:
-                    media_group.append(InputMediaPhoto(media=photo))
-            
-            try:
-                sent_messages = await context.bot.send_media_group(chat_id=channel_id, media=media_group)
-                p["message_id"] = sent_messages[0].message_id
-                save_data(data)
-                await query.edit_message_text("✅ تم نشر ألبوم الصور الجديد في القناة!")
-            except Exception as e:
-                await query.edit_message_text(f"⚠️ فشل النشر: {e}")
-            break
+    channel_id = int(os.getenv("CHANNEL_ID"))
+    
+    # 1. حذف المنشور القديم
+    if p.get("message_id"):
+        try:
+            await context.bot.delete_message(chat_id=channel_id, message_id=p["message_id"])
+        except Exception as e:
+            print(f"⚠️ فشل حذف المنشور: {e}")
+    
+    # 2. بناء الكابشن
+    caption = f"✨ <b>{p['name']}</b>\n\n"
+    caption += f"💰 السعر: {p['price']} دج\n"
+    ARABIC_NAMES = {"colors": "🎨 الألوان", "sizes": "📏 المقاسات", "volume": "🧴 السعة"}
+    for k, v in p.get('attributes', {}).items():
+        arabic_name = ARABIC_NAMES.get(k, k)
+        if isinstance(v, list):
+            v = "، ".join([str(item).strip() for item in v])
+        caption += f"{arabic_name}: {v}\n"
+    caption += f"📝 {p.get('description', '')}\n\n"
+    smart_link = f"https://t.me/sewingFadha_il_bot?start=product_{p['id']}"
+    caption += f"🛒 <a href='{smart_link}'>اطلبي الآن</a>"
+    
+    # 3. جلب الصور من Supabase
+    photos = p.get("photos") or []
+    if isinstance(photos, str):
+        import json
+        photos = json.loads(photos)
+    if not isinstance(photos, list):
+        photos = []
+    
+    print(f"🔍 [DEBUG] photos = {photos}, type = {type(photos)}")
+    
+    if not photos:
+        await query.edit_message_text("⚠️ لا توجد صور لهذا المنتج!")
+        return
+    
+    # 4. إرسال الألبوم
+    media_group = []
+    for i, photo in enumerate(photos):
+        if i == 0:
+            media_group.append(InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"))
+        else:
+            media_group.append(InputMediaPhoto(media=photo))
+    
+    try:
+        sent_messages = await context.bot.send_media_group(chat_id=channel_id, media=media_group)
+        # تحديث message_id في Supabase
+        update_product(p_id, {"message_id": sent_messages[0].message_id})
+        await query.edit_message_text("✅ تم نشر ألبوم الصور الجديد في القناة!")
+    except Exception as e:
+        await query.edit_message_text(f"⚠️ فشل النشر: {e}")
+
+async def photos_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """عند الانتهاء من إرسال الصور، ننتقل لسؤال الاسم"""
+    query = update.callback_query
+    await query.answer()
+    
+    # التأكد من أن لدينا صوراً
+    if 'photos' not in context.user_data['new_product'] or not context.user_data['new_product']['photos']:
+        await query.edit_message_text("⚠️ لم ترسلي أي صورة! أرسلي صورة أولاً.")
+        return ASK_PHOTO
+    
+    # الانتقال لسؤال اسم المنتج
+    await query.edit_message_text("✍️ ممتاز! الآن، ما هو اسم المنتج؟")
+    return ASK_NAME
+
+async def delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "confirm_delete_yes":
+        p_id = context.user_data['delete_id']
+        try:
+            # الحذف من Supabase
+            delete_product(p_id)
+            await query.edit_message_text(f"✅ تم حذف المنتج (ID: {p_id}) بنجاح!")
+        except Exception as e:
+            await query.edit_message_text(f"⚠️ فشل الحذف: {e}")
+    else:
+        await query.edit_message_text("❌ تم الإلغاء.")
+        
+    return ConversationHandler.END
+
+async def delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بدء عملية حذف منتج"""
+    await update.message.reply_text("🗑️ أرسلي <b>ID</b> المنتج الذي تريدين حذفه:", parse_mode="HTML")
+    return DELETE_ID
 
 # ═══ Main ═══
 def main():
@@ -632,7 +730,10 @@ def main():
         ],
         states={
             CHOOSE_CATEGORY: [CallbackQueryHandler(category_chosen, pattern="^cat_")],
-            ASK_PHOTO: [MessageHandler(filters.PHOTO, get_photo)],
+            ASK_PHOTO: [
+                MessageHandler(filters.PHOTO, get_photo),
+                CallbackQueryHandler(photos_done, pattern="^photos_done$")
+            ],
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             ASK_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_price)],
             ASK_DYNAMIC_ATTR: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_dynamic_attr)], 
@@ -686,7 +787,10 @@ def main():
                 CommandHandler("done", add_more_photos)
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CallbackQueryHandler(handle_album_choice, pattern="^album_")  # ← أضف هذا
+        ]
     )
     app.add_handler(photos_handler)
 
@@ -700,9 +804,26 @@ def main():
 
     # ═══ 3. معالج الأزرار الثابتة (يجب أن يكون في النهاية) ═══
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_buttons))
-    
-    print("🤖 بوت الإدارة يعمل...")
-    app.run_polling()
-    
+
+    # ═══ اكتشاف بيئة التشغيل ═══
+    is_render = os.environ.get("RENDER") is not None
+    webhook_url = os.environ.get("WEBHOOK_URL")
+
+    if is_render and webhook_url:
+        # ═══ وضع Webhook (على Render) ═══
+        port = int(os.environ.get("PORT", 8080))
+        print(f"🚀 بوت الإدارة يعمل في وضع Webhook على المنفذ {port}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path="admin_webhook",
+            webhook_url=f"{webhook_url}/admin_webhook",
+            drop_pending_updates=True
+        )
+    else:
+        # ═══ وضع Polling (على جهازك المحلي) ═══
+        print("🤖 بوت الإدارة يعمل في وضع Polling (محلي)")
+        app.run_polling()
+
 if __name__ == "__main__":
     main()

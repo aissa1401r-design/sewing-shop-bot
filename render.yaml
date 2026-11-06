@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: sewing-shop-client
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: RENDER
+        value: true
+      # سيتم إضافة المتغيرات الأخرى (التوكنات، إلخ) يدوياً من لوحة تحكم Render
+
+  - type: web
+    name: sewing-shop-admin
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python admin_bot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: RENDER
+        value: true
