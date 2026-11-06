@@ -24,11 +24,19 @@ SMART_LINKS = {
 ASK_NAME, ASK_PHONE, ASK_ADDRESS, CONFIRM, ASK_DYNAMIC_ATTR = range(5)
 
 def load_token():
-    with open(".env", "r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip().startswith("BOT_TOKEN="):
-                return line.strip().split("=", 1)[1].strip().strip('"')
-    raise ValueError("Token not found")
+    # 1. حاول القراءة من متغيرات البيئة (Render)
+    token = os.getenv("BOT_TOKEN")
+    if token:
+        return token
+    
+    # 2. إذا لم يوجد، اقرأ من ملف .env (محلياً)
+    if os.path.exists(".env"):
+        with open(".env", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip().startswith("BOT_TOKEN="):
+                    return line.strip().split("=", 1)[1].strip().strip('"')
+    
+    raise ValueError("⚠️ BOT_TOKEN غير موجود في متغيرات البيئة أو .env")
 
 def load_products():
     """قراءة المنتجات من ملف JSON"""

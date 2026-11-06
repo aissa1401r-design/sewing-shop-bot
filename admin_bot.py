@@ -35,7 +35,19 @@ ATTR_QUESTIONS = {
 }
 
 def load_token():
-    return os.getenv("ADMIN_BOT_TOKEN")
+    # 1. حاول القراءة من متغيرات البيئة (Render)
+    token = os.getenv("ADMIN_BOT_TOKEN")
+    if token:
+        return token
+    
+    # 2. إذا لم يوجد، اقرأ من ملف .env (محلياً)
+    if os.path.exists(".env"):
+        with open(".env", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip().startswith("ADMIN_BOT_TOKEN="):
+                    return line.strip().split("=", 1)[1].strip().strip('"')
+    
+    raise ValueError("⚠️ ADMIN_BOT_TOKEN غير موجود في متغيرات البيئة أو .env")
 
 def load_data(): # ← تغير الاسم
     with open("products.json", "r", encoding="utf-8") as f:
