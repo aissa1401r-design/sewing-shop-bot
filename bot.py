@@ -51,15 +51,30 @@ def load_products():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """الترحيب الأول"""
     args = context.args
-    data = load_products()
-    categories = data.get("categories", {})
+    
+    # ═══ 1. قراءة الأقسام من products.json (الملف المحلي) ═══
+    categories = {}
+    try:
+        with open("products.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+            categories = data.get("categories", {})
+    except FileNotFoundError:
+        # إذا لم يوجد الملف، نستخدم الأقسام الثابتة
+        categories = {
+            "jalabib": {"name": "👗 جلابيب"},
+            "accessories": {"name": "💍 أكسسوارات"},
+            "perfumes": {"name": "🧴 عطور"},
+            "oils": {"name": "🌿 زيوت"},
+            "home": {"name": "🏠 مستلزمات منزلية"},
+            "other": {"name": "🛍️ آخر"}
+        }
 
-    # بناء الأزرار ديناميكياً من الأقسام
+    # بناء الأزرار
     keyboard = []
     row = []
     for cat_id, cat_info in categories.items():
         row.append(InlineKeyboardButton(cat_info["name"], callback_data=f"cat_{cat_id}"))
-        if len(row) == 2: # زرين في كل صف
+        if len(row) == 2:
             keyboard.append(row)
             row = []
     if row:
@@ -72,7 +87,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         arg = args[0]
         product_name = None
         
-        # الروابط الثابتة (احتياطية)
         SMART_LINKS = {
             "jalabiya_red": "الجلابية الحمراء",
             "jalabiya_blue": "الجلابية الزرقاء",
@@ -83,7 +97,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif arg.startswith("product_"):
             try:
                 product_id = int(arg.split("_")[1])
-                products = data.get("products", [])
+                products = load_products()  # من Supabase
                 for p in products:
                     if p.get("id") == product_id:
                         product_name = p["name"]
@@ -92,16 +106,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         
         if product_name:
-            # العثور على ID المنتج من أجل زر الطلب
-            product_id = None
-            for p in data.get("products", []):
-                if p["name"] == product_name:
-                    product_id = p["id"]
-                    break
-            
             context.user_data['selected_product'] = product_name
             smart_keyboard = [
-                [InlineKeyboardButton(f"🛒 اطلب {product_name} الان", callback_data=f"order_dyn_{product_id}")], # ← نستخدم order_dyn_ مع ID
+                [InlineKeyboardButton(f"🛒 اطلب {product_name} الان", callback_data="order_start_red")],
                 [InlineKeyboardButton(f"👗 تصفح كل المنتجات", callback_data="back_home")]
             ]
             smart_markup = InlineKeyboardMarkup(smart_keyboard)
@@ -136,7 +143,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("📞 للتواصل مع صاحبة المتجر:\n@اسم_حساب_صاحبة_المتجر")
     
     elif query.data.startswith("cat_") or query.data.startswith("page_"):
-        # 1. استخراج القسم ورقم الصفحة
         if query.data.startswith("cat_"):
             cat_id = query.data.replace("cat_", "")
             page = 0
@@ -145,16 +151,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cat_id = parts[1]
             page = int(parts[2])
 
-        data = load_products()
-        category_info = data["categories"].get(cat_id, {})
-        products = [p for p in data.get("products", []) if p.get("category") == cat_id]
+        products = load_products()  # من Supabase (قائمة)
+        filtered_products = [p for p in products if p.get("category") == cat_id]
+        
+        ARABIC_CATEGORIES = {
+            "jalabib": "👗 جلابيب",
+            "accessories": "💍 أكسسوارات",
+            "perfumes": "🧴 عطور",
+            "oils": "🌿 زيوت",
+            "home": "🏠 مستلزمات منزلية",
+            "other": "🛍️ آخر"
+        }
+        cat_name = ARABIC_CATEGORIES.get(cat_id, cat_id)
 
-        if not products:
-            await query.edit_message_text(f"لا توجد منتجات حالياً في قسم {category_info.get('name', '')}.")
+        if not filtered_products:
+            await query.edit_message_text(f"لا توجد منتجات حالياً في قسم {cat_name}.")
             return
 
-        # 2. عرض منتج واحد فقط
-        p = products[page]
+        p = filtered_products[page]
         photo_id = p.get("photo")
         caption = f"<b>{p['name']}</b>\n\n"
         caption += f"💰 السعر: {p['price']} دج\n"
@@ -167,12 +181,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption += f"{arabic_name}: {v}\n"
         caption += f"\n<i>{p.get('description', '')}</i>"
 
-        # 3. بناء الأزرار
         keyboard = [
             [InlineKeyboardButton("🛒 اطلب الآن", callback_data=f"order_dyn_{p['id']}")],
             [
                 InlineKeyboardButton("⬅️ السابق", callback_data=f"page_{cat_id}_{page-1}"),
-                InlineKeyboardButton(f"{page+1}/{len(products)}", callback_data="ignore"),
+                InlineKeyboardButton(f"{page+1}/{len(filtered_products)}", callback_data="ignore"),
                 InlineKeyboardButton("التالي ➡️", callback_data=f"page_{cat_id}_{page+1}")
             ],
             [InlineKeyboardButton("⬅️ رجوع للأقسام", callback_data="back_home")]
@@ -181,13 +194,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if page == 0:
             keyboard[1].pop(0)
             keyboard[1].insert(0, InlineKeyboardButton(" ", callback_data="ignore"))
-        if page == len(products) - 1:
+        if page == len(filtered_products) - 1:
             keyboard[1].pop()
             keyboard[1].append(InlineKeyboardButton(" ", callback_data="ignore"))
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # 4. إرسال الرسالة (مرة واحدة فقط)
         try:
             if photo_id:
                 await query.edit_message_media(
@@ -204,11 +216,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             await query.message.reply_text(caption, parse_mode="HTML", reply_markup=reply_markup)
 
-    # ═══ هذا هو الجزء المفقود ═══
     elif query.data == "back_home":
-        data = load_products()
-        categories = data.get("categories", {})
-        
+        # ═══ قراءة الأقسام من products.json (وليس من Supabase) ═══
+        categories = {}
+        try:
+            with open("products.json", "r", encoding="utf-8") as f:
+                data = json.load(f)
+                categories = data.get("categories", {})
+        except FileNotFoundError:
+            categories = {
+                "jalabib": {"name": "👗 جلابيب"},
+                "accessories": {"name": "💍 أكسسوارات"},
+                "perfumes": {"name": "🧴 عطور"},
+                "oils": {"name": "🌿 زيوت"},
+                "home": {"name": "🏠 مستلزمات منزلية"},
+                "other": {"name": "🛍️ آخر"}
+            }
+
         keyboard = []
         row = []
         for cat_id, cat_info in categories.items():
@@ -226,7 +250,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
             reply_markup=reply_markup
         )
-    # ═══════════════════════════════════
 
 # ═══ استمارة الطلب ═══
 async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
