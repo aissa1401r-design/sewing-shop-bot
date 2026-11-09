@@ -5,6 +5,7 @@ Sewing Shop Telegram Bot
 
 import json
 import os
+from database import load_products as db_load_products
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
@@ -39,9 +40,12 @@ def load_token():
     raise ValueError("⚠️ BOT_TOKEN غير موجود في متغيرات البيئة أو .env")
 
 def load_products():
-    """قراءة المنتجات من ملف JSON"""
-    with open("products.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+    """قراءة المنتجات من ملف supabase"""
+    try:
+        return db_load_products()
+    except Exception as e:
+        print(f"⚠️ فشل جلب المنتجات من Supabase: {e}")
+        return []
 
 # ═══ أوامر البوت ═══
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
