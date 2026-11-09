@@ -266,7 +266,7 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not selected_product and query.data.startswith("order_dyn_"):
         product_id = int(query.data.replace("order_dyn_", ""))
         data = load_products()
-        for p in data.get("products", []):
+        for p in data:
             if p.get("id") == product_id:
                 selected_product = p["name"]
                 break
@@ -278,10 +278,12 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['order'] = {'product': selected_product}
     
     # 2. البحث عن المنتج في الملف لمعرفة سماته (اللون، المقاس، إلخ)
-    data = load_products()
+    data = load_products()  # ← هذه قائمة منتجات الآن
     product_obj = None
-    for p in data.get("products", []):
-        if p["name"] == selected_product:
+    
+    # البحث عن المنتج بالاسم في القائمة
+    for p in data:
+        if p.get("name") == selected_product:
             product_obj = p
             break
             
