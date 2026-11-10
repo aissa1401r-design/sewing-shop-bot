@@ -31,12 +31,16 @@ def delete_product(product_id):
     response = supabase.table("products").delete().eq("id", product_id).execute()
     return response.data
 
-def save_order(order_data):
-    """حفظ طلب جديد"""
-    response = supabase.table("orders").insert(order_data).execute()
-    return response.data
-
 def get_orders():
     """عرض الطلبات"""
     response = supabase.table("orders").select("*").order("created_at", desc=True).execute()
     return response.data
+
+def save_order(order_data):
+    """حفظ طلب جديد في Supabase"""
+    try:
+        response = supabase.table("orders").insert(order_data).execute()
+        return response.data
+    except Exception as e:
+        print(f"⚠️ فشل حفظ الطلب في Supabase: {e}")
+        return None

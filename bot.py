@@ -5,7 +5,7 @@ Sewing Shop Telegram Bot
 
 import json
 import os
-from database import load_products as db_load_products
+from database import load_products as db_load_products, save_order
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
@@ -132,6 +132,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة النقرات"""
     query = update.callback_query
+
+    ARABIC_CATEGORIES = {
+        "jalabib": "👗 جلابيب",
+        "accessories": "💍 أكسسوارات",
+        "perfumes": "🧴 عطور",
+        "oils": "🌿 زيوت",
+        "home": "🏠 مستلزمات منزلية",
+        "other": "🛍️ آخر"
+    }
 
     if query.data in ("order_start", "order_start_red"):
         await query.answer()
@@ -427,17 +436,16 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         admin_message += f"📍 العنوان: {order.get('address')}\n"
         admin_message += f"🆔 حساب الزبونة: @{query.from_user.username or 'لا يوجد'}"
         
-                # ═══ حفظ الطلب في orders.json ═══
+        # ═══ حفظ الطلب في orders.json ═══
         order_data = {
-            "date": str(datetime.now()),
             "product": order.get('product'),
             "color": order.get('اللون', ''),
             "size": order.get('المقاس', ''),
             "volume": order.get('السعة', ''),
-            "name": order.get('name'),
-            "phone": order.get('phone'),
-            "address": order.get('address'),
-            "username": query.from_user.username or "لا يوجد",
+            "customer_name": order.get('name'),
+            "customer_phone": order.get('phone'),
+            "customer_address": order.get('address'),
+            "customer_username": query.from_user.username or "لا يوجد",
         }
         save_order(order_data)
         # ═════════════════════════════════
@@ -460,14 +468,28 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
         
 # أضف هذه الدالة في bot.py (بعد دالة start)
+
 async def go_back_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """العودة للقائمة الرئيسية أثناء المحادثة"""
     query = update.callback_query
     await query.answer()
     
-    data = load_products()
-    categories = data.get("categories", {})
-    
+    # ═══ قراءة الأقسام من products.json ═══
+    categories = {}
+    try:
+        with open("products.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+            categories = data.get("categories", {})
+    except FileNotFoundError:
+        categories = {
+            "jalabib": {"name": "👗 جلابيب"},
+            "accessories": {"name": "💍 أكسسوارات"},
+            "perfumes": {"name": "🧴 عطور"},
+            "oils": {"name": "🌿 زيوت"},
+            "home": {"name": "🏠 مستلزمات منزلية"},
+            "other": {"name": "🛍️ آخر"}
+        }
+
     keyboard = []
     row = []
     for cat_id, cat_info in categories.items():
@@ -482,27 +504,10 @@ async def go_back_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        "أهلاً بك في متجر الخياطة اليدوية 🌸\n\nاختر ما يهمك:",
+        "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
         reply_markup=reply_markup
     )
-    return ConversationHandler.END  # ← مهم جداً: إنهاء المحادثة
-def save_order(order_data):
-    """حفظ الطلب في ملف orders.json"""
-    file_path = "orders.json"
-    try:
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            with open(file_path, "r", encoding="utf-8") as f:
-                orders = json.load(f)
-        else:
-            orders = []
-        
-        # إضافة الطلب الجديد
-        orders.append(order_data)
-        
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(orders, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"⚠️ فشل حفظ الطلب: {e}")
+    return ConversationHandler.END
 
 def main():
     token = load_token()
