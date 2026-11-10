@@ -80,7 +80,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if row:
         keyboard.append(row)
     
-    keyboard.append([InlineKeyboardButton("📞 تواصل معنا", callback_data="contact")])
+        # ═══ إضافة زر القناة ═══
+    CHANNEL_URL = "https://t.me/+Oxpv5bHOJFBlZmE0"  # ← استبدل هذا برابط قناتك
+    
+    keyboard.append([
+        InlineKeyboardButton("🛍️ زيارة القناة", url=CHANNEL_URL),
+        InlineKeyboardButton("📞 تواصل معنا", callback_data="contact")
+    ])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if args:
