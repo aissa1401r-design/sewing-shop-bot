@@ -5,8 +5,11 @@ Admin Bot for Sewing Shop
 
 import os
 import json
+import uuid
+import requests
+import requests
 from dotenv import load_dotenv
-from database import load_products, save_product, update_product, delete_product 
+from database import load_products, save_product, update_product, delete_product, compress_image, upload_image_to_supabase
 from telegram import InputMediaPhoto, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.request import HTTPXRequest
 from telegram.ext import (
@@ -213,28 +216,60 @@ async def get_dynamic_attr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("📝 أضيفي وصفاً قصيراً للمنتج:")
         return ASK_DESC
-
 async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """حفظ المنتج في Supabase والنشر في القناة"""
     context.user_data['new_product']['description'] = update.message.text
     product = context.user_data['new_product']
     
-    # ═══ 1. تجهيز البيانات للحفظ في Supabase ═══
+    # ═══ 1. رفع الصور إلى Supabase Storage (مع الضغط) ═══    
+    photo_urls = []
+    bot_token = load_token()  # ← أضف هذا السطر (كان مفقوداً)
+        
+    photo_urls = []
+    bot_token = load_token()
+    
+    for photo_id in product.get('photos', []):
+        try:
+            # 1. جلب رابط الصورة من تيليجرام (فقط file_path، بدون إضافات)
+            file_info = await context.bot.get_file(photo_id)
+            telegram_url = file_info.file_path  # ← هذا الرابط كامل جاهز
+            print(f"🔍 [DEBUG] رابط الصورة: {telegram_url}")
+            
+            # 2. تحميل الصورة
+            response = requests.get(telegram_url)
+            print(f"🔍 [DEBUG] حالة الطلب: {response.status_code}")
+            image_bytes = response.content
+            
+            # 3. ضغط الصورة
+            compressed_bytes = compress_image(image_bytes, max_width=800, quality=85)
+            
+            # 4. رفع الصورة إلى Supabase (باسم فريد وآمن)
+            safe_name = f"product_{uuid.uuid4().hex[:10]}.jpg"  # ← اسم آمن
+            public_url = upload_image_to_supabase(compressed_bytes, safe_name)
+            
+            if public_url:
+                photo_urls.append(public_url)
+                print(f"✅ [DEBUG] تم رفع الصورة: {public_url}")
+            
+        except Exception as e:
+            print(f"⚠️ فشل رفع الصورة {photo_id}: {e}")
+    
+    # ═══ 2. تجهيز البيانات للحفظ في Supabase (بالروابط الجديدة) ═══
     product_data = {
         "name": product['name'],
         "price": product['price'],
         "category": product['category'],
         "description": product['description'],
         "attributes": product.get('attributes', {}),
-        "photo": product.get('photo'),
-        "photos": product.get('photos', [product.get('photo')]) if product.get('photo') else []
+        "photo": photo_urls[0] if photo_urls else product.get('photo'),
+        "photos": photo_urls if photo_urls else ([product.get('photo')] if product.get('photo') else [])
     }
     
-    # ═══ 2. حفظ المنتج في قاعدة البيانات ═══
+    # ═══ 3. حفظ المنتج في قاعدة البيانات ═══
     saved_product = save_product(product_data)
     new_id = saved_product[0]['id'] if saved_product else 0
     
-    # ═══ 3. تجهيز النص للقناة ═══
+    # ═══ 4. تجهيز النص للقناة ═══
     channel_id = int(os.getenv("CHANNEL_ID"))
     smart_link = f"https://t.me/sewingFadha_il_bot?start=product_{new_id}"
     
@@ -262,33 +297,26 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🛒 <a href='{smart_link}'>اطلبي الآن</a>"
     )
     
-    # ═══ 4. النشر في القناة وحفظ message_id ═══
-    first_photo = product['photos'][0] if product.get('photos') else None
-    if not first_photo:
-        await update.message.reply_text("⚠️ لا توجد صورة لهذا المنتج!")
-        return ConversationHandler.END
-    # ═══ 4. النشر في القناة (ألبوم صور) وحفظ message_id ═══
+    # ═══ 5. النشر في القناة (باستخدام file_id الأصلي - أمان) ═══
     try:
-        photos = product.get('photos', [])
-        if not photos:
+        # نستخدم file_id الأصلي في القناة (لضمان بقائها حتى لو تعطلت Supabase)
+        original_photos = product.get('photos', [])
+        if not original_photos:
             await update.message.reply_text("⚠️ لا توجد صور لهذا المنتج!")
             return ConversationHandler.END
             
-        # إذا كانت هناك صورة واحدة فقط
-        if len(photos) == 1:
+        if len(original_photos) == 1:
             sent_message = await context.bot.send_photo(
                 chat_id=channel_id,
-                photo=photos[0],
+                photo=original_photos[0],  # ← file_id الأصلي
                 caption=caption,
                 parse_mode="HTML"
             )
             update_product(new_id, {"message_id": sent_message.message_id})
         else:
-            # إذا كانت هناك عدة صور (ألبوم)
             media_group = []
-            for i, photo in enumerate(photos[:10]): # التليجرام يسمح بـ 10 صور كحد أقصى
+            for i, photo in enumerate(original_photos[:10]):
                 if i == 0:
-                    # الصورة الأولى تحمل النص (caption)
                     media_group.append(InputMediaPhoto(media=photo, caption=caption, parse_mode="HTML"))
                 else:
                     media_group.append(InputMediaPhoto(media=photo))
@@ -297,7 +325,6 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=channel_id,
                 media=media_group
             )
-            # نحفظ message_id للصورة الأولى
             if sent_messages:
                 update_product(new_id, {"message_id": sent_messages[0].message_id})
         
@@ -305,6 +332,7 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"⚠️ فشل النشر في القناة: {e}")
 
+    return ConversationHandler.END
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ تم الإلغاء.")
     return ConversationHandler.END
