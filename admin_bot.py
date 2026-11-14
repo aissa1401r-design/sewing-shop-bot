@@ -732,21 +732,41 @@ async def delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if query.data == "confirm_delete_yes":
         p_id = context.user_data['delete_id']
+        
         try:
-            # الحذف من Supabase
+            # ═══ 1. جلب المنتج من القاعدة (قبل الحذف) ═══
+            products = load_products()
+            product = next((p for p in products if p["id"] == p_id), None)
+            
+            if not product:
+                await query.edit_message_text(f"⚠️ لم يتم العثور على منتج بالمعرف {p_id}.")
+                return ConversationHandler.END
+            
+            # ═══ 2. حذف المنتج من Supabase (المصدر الأساسي) ═══
             delete_product(p_id)
-            await query.edit_message_text(f"✅ تم حذف المنتج (ID: {p_id}) بنجاح!")
+            print(f"✅ تم حذف المنتج (ID: {p_id}) من القاعدة.")
+            
+            # ═══ 3. حذف المنشور من القناة (إذا كان له message_id) ═══
+            if product.get("message_id"):
+                try:
+                    channel_id = int(os.getenv("CHANNEL_ID"))
+                    await context.bot.delete_message(
+                        chat_id=channel_id,
+                        message_id=product["message_id"]
+                    )
+                    print(f"✅ تم حذف المنشور من القناة (ID: {p_id}).")
+                except Exception as e:
+                    print(f"⚠️ فشل حذف المنشور من القناة: {e}")
+                    # لا نوقف العملية، المنتج حُذف بالفعل من القاعدة
+            
+            await query.edit_message_text(f"✅ تم حذف المنتج (ID: {p_id}) والمنشور من القناة بنجاح!")
+            
         except Exception as e:
-            await query.edit_message_text(f"⚠️ فشل الحذف: {e}")
+            await query.edit_message_text(f"⚠️ حدث خطأ أثناء الحذف: {e}")
     else:
         await query.edit_message_text("❌ تم الإلغاء.")
         
     return ConversationHandler.END
-
-async def delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """بدء عملية حذف منتج"""
-    await update.message.reply_text("🗑️ أرسلي <b>ID</b> المنتج الذي تريدين حذفه:", parse_mode="HTML")
-    return DELETE_ID
 
 # ═══ Main ═══
 def main():
