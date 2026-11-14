@@ -768,6 +768,11 @@ async def delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     return ConversationHandler.END
 
+async def delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بدء عملية حذف منتج"""
+    await update.message.reply_text("🗑️ أرسلي <b>ID</b> المنتج الذي تريدين حذفه:", parse_mode="HTML")
+    return DELETE_ID
+
 # ═══ Main ═══
 def main():
     token = load_token()
