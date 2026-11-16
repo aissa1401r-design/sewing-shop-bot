@@ -77,3 +77,10 @@ def compress_image(image_bytes, max_width=800, quality=85):
     except Exception as e:
         print(f"⚠️ فشل ضغط الصورة: {e}")
         return image_bytes  # إرجاع الأصلية إذا فشل الضغط
+
+def update_message_ids(product_id, message_ids):
+    """تحديث قائمة message_ids لمنتج"""
+    try:
+        supabase.table("products").update({"message_ids": message_ids}).eq("id", product_id).execute()
+    except Exception as e:
+        print(f"⚠️ فشل تحديث message_ids: {e}")

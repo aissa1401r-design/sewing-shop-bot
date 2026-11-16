@@ -7,7 +7,6 @@ import os
 import json
 import uuid
 import requests
-import requests
 from dotenv import load_dotenv
 from database import load_products, save_product, update_product, delete_product, compress_image, upload_image_to_supabase
 from telegram import InputMediaPhoto, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
@@ -225,9 +224,6 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo_urls = []
     bot_token = load_token()  # ← أضف هذا السطر (كان مفقوداً)
         
-    photo_urls = []
-    bot_token = load_token()
-    
     for photo_id in product.get('photos', []):
         try:
             # 1. جلب رابط الصورة من تيليجرام (فقط file_path، بدون إضافات)
@@ -297,9 +293,8 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🛒 <a href='{smart_link}'>اطلبي الآن</a>"
     )
     
-    # ═══ 5. النشر في القناة (باستخدام file_id الأصلي - أمان) ═══
+    # ═══ 5. النشر في القناة (باستخدام file_id الأصلي) ═══
     try:
-        # نستخدم file_id الأصلي في القناة (لضمان بقائها حتى لو تعطلت Supabase)
         original_photos = product.get('photos', [])
         if not original_photos:
             await update.message.reply_text("⚠️ لا توجد صور لهذا المنتج!")
@@ -308,11 +303,11 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(original_photos) == 1:
             sent_message = await context.bot.send_photo(
                 chat_id=channel_id,
-                photo=original_photos[0],  # ← file_id الأصلي
+                photo=original_photos[0],
                 caption=caption,
                 parse_mode="HTML"
             )
-            update_product(new_id, {"message_id": sent_message.message_id})
+            update_product(new_id, {"message_id": sent_message.message_id, "message_ids": [sent_message.message_id]})
         else:
             media_group = []
             for i, photo in enumerate(original_photos[:10]):
@@ -326,7 +321,8 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 media=media_group
             )
             if sent_messages:
-                update_product(new_id, {"message_id": sent_messages[0].message_id})
+                all_ids = [m.message_id for m in sent_messages]
+                update_product(new_id, {"message_id": all_ids[0], "message_ids": all_ids})
         
         await update.message.reply_text("✅ تم إضافة المنتج ونشره في القناة بنجاح!")
     except Exception as e:
@@ -644,10 +640,9 @@ async def handle_album_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     
     data_choice = query.data.split("_")
-    action = data_choice[1] # yes أو no
+    action = data_choice[1]
     p_id = int(data_choice[2])
     
-    # ═══ جلب المنتج من Supabase ═══
     products = load_products()
     p = next((item for item in products if item["id"] == p_id), None)
     
@@ -659,11 +654,16 @@ async def handle_album_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text("✅ تم حفظ الصور في البوت، لكن المنشور القديم في القناة لم يتغير.")
         return
     
-    # إذا اختار "نعم" (نشر ألبوم جديد)
     channel_id = int(os.getenv("CHANNEL_ID"))
     
-    # 1. حذف المنشور القديم
-    if p.get("message_id"):
+    # 1. حذف المنشور القديم (كل الصور)
+    if p.get("message_ids"):
+        try:
+            for msg_id in p["message_ids"]:
+                await context.bot.delete_message(chat_id=channel_id, message_id=msg_id)
+        except Exception as e:
+            print(f"⚠️ فشل حذف بعض الصور القديمة: {e}")
+    elif p.get("message_id"):
         try:
             await context.bot.delete_message(chat_id=channel_id, message_id=p["message_id"])
         except Exception as e:
@@ -690,13 +690,11 @@ async def handle_album_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not isinstance(photos, list):
         photos = []
     
-    print(f"🔍 [DEBUG] photos = {photos}, type = {type(photos)}")
-    
     if not photos:
         await query.edit_message_text("⚠️ لا توجد صور لهذا المنتج!")
         return
     
-    # 4. إرسال الألبوم
+    # 4. إرسال الألبوم الجديد
     media_group = []
     for i, photo in enumerate(photos):
         if i == 0:
@@ -706,12 +704,13 @@ async def handle_album_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     try:
         sent_messages = await context.bot.send_media_group(chat_id=channel_id, media=media_group)
-        # تحديث message_id في Supabase
-        update_product(p_id, {"message_id": sent_messages[0].message_id})
+        # ═══ حفظ كل message_ids ═══
+        all_ids = [m.message_id for m in sent_messages]
+        update_product(p_id, {"message_id": all_ids[0], "message_ids": all_ids})
         await query.edit_message_text("✅ تم نشر ألبوم الصور الجديد في القناة!")
     except Exception as e:
         await query.edit_message_text(f"⚠️ فشل النشر: {e}")
-
+        
 async def photos_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """عند الانتهاء من إرسال الصور، ننتقل لسؤال الاسم"""
     query = update.callback_query
@@ -746,17 +745,22 @@ async def delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             delete_product(p_id)
             print(f"✅ تم حذف المنتج (ID: {p_id}) من القاعدة.")
             
-            # ═══ 3. حذف المنشور من القناة (إذا كان له message_id) ═══
-            if product.get("message_id"):
+                        # ═══ 3. حذف المنشور من القناة (كل الصور) ═══
+            if product.get("message_ids"):
                 try:
                     channel_id = int(os.getenv("CHANNEL_ID"))
-                    await context.bot.delete_message(
-                        chat_id=channel_id,
-                        message_id=product["message_id"]
-                    )
+                    for msg_id in product["message_ids"]:
+                        await context.bot.delete_message(chat_id=channel_id, message_id=msg_id)
+                    print(f"✅ تم حذف كل صور المنشور من القناة (ID: {p_id}).")
+                except Exception as e:
+                    print(f"⚠️ فشل حذف بعض الصور: {e}")
+            elif product.get("message_id"):
+                try:
+                    channel_id = int(os.getenv("CHANNEL_ID"))
+                    await context.bot.delete_message(chat_id=channel_id, message_id=product["message_id"])
                     print(f"✅ تم حذف المنشور من القناة (ID: {p_id}).")
                 except Exception as e:
-                    print(f"⚠️ فشل حذف المنشور من القناة: {e}")
+                    print(f"⚠️ فشل حذف المنشور: {e}")
                     # لا نوقف العملية، المنتج حُذف بالفعل من القاعدة
             
             await query.edit_message_text(f"✅ تم حذف المنتج (ID: {p_id}) والمنشور من القناة بنجاح!")
