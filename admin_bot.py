@@ -1219,6 +1219,7 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         conversation_timeout=1800  # ← 30 دقيقة (بدلاً من 15)
+        per_message=False 
     )
     app.add_handler(conv_handler)
 
@@ -1234,7 +1235,8 @@ def main():
             EDIT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_save)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        conversation_timeout=900
+        conversation_timeout=900,
+        per_message=False 
     )
     app.add_handler(edit_handler)
 
@@ -1249,7 +1251,8 @@ def main():
             DELETE_CONFIRM: [CallbackQueryHandler(delete_confirm, pattern="^confirm_delete_")],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        conversation_timeout=900
+        conversation_timeout=900,
+        per_message=False 
     )
     app.add_handler(delete_handler)
 
@@ -1267,7 +1270,8 @@ def main():
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        conversation_timeout=1800
+        conversation_timeout=1800,
+        per_message=False 
     )
     app.add_handler(photos_handler)
 
