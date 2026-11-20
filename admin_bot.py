@@ -1218,7 +1218,7 @@ def main():
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        conversation_timeout=1800  # ← 30 دقيقة (بدلاً من 15)
+        conversation_timeout=1800,  # ← 30 دقيقة (بدلاً من 15)
         per_message=False 
     )
     app.add_handler(conv_handler)
