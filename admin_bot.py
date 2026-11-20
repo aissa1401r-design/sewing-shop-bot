@@ -13,7 +13,8 @@ from telegram import InputMediaPhoto, Update, InlineKeyboardButton, InlineKeyboa
 from telegram.request import HTTPXRequest
 from telegram.ext import (
     Application, CommandHandler, ContextTypes,
-    ConversationHandler, MessageHandler, CallbackQueryHandler, filters
+    ConversationHandler, MessageHandler, CallbackQueryHandler,
+    filters
 )
 
 load_dotenv()
@@ -98,6 +99,64 @@ def build_caption(product_name, price, attributes, description, product_id, is_p
     
     return caption, smart_link
 
+import asyncio
+import httpx
+
+async def download_and_upload_image(context, photo_id, max_retries=3):
+    """دالة قوية لتحميل الصورة من تيليجرام ورفعها إلى Supabase مع محاولات متعددة"""
+    for attempt in range(max_retries):
+        try:
+            # 1. جلب مسار الملف من تيليجرام
+            file_info = await context.bot.get_file(photo_id)
+            telegram_url = file_info.file_path
+            
+            # 2. تحميل الصورة باستخدام httpx (أكثر استقراراً من requests)
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.get(telegram_url)
+                response.raise_for_status()
+                image_bytes = response.content
+            
+            # 3. ضغط الصورة
+            compressed_bytes = compress_image(image_bytes, max_width=800, quality=85)
+            
+            # 4. رفع الصورة إلى Supabase
+            safe_name = f"product_{uuid.uuid4().hex[:10]}.jpg"
+            public_url = upload_image_to_supabase(compressed_bytes, safe_name)
+            
+            if public_url:
+                return public_url  # نجحنا!
+                
+        except Exception as e:
+            print(f"⚠️ محاولة {attempt + 1} فشلت للصورة {photo_id[:10]}...: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2)  # الانتظار ثانيتين قبل المحاولة التالية
+            else:
+                raise e  # فشلت كل المحاولات
+
+import time # تأكدي من وجودها في أعلى الملف
+def upload_with_retry(image_bytes, filename, max_retries=3):
+    """محاولة رفع الصورة إلى Supabase مع إعادة المحاولة عند الفشل"""
+    for attempt in range(max_retries):
+        try:
+            # استدعاء دالة الرفع الأصلية الخاصة بك
+            url = upload_image_to_supabase(image_bytes, filename)
+            if url:
+                return url
+        except Exception as e:
+            print(f"⚠️ محاولة رفع {attempt + 1} فشلت: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2) # الانتظار ثانيتين قبل المحاولة التالية
+    return None
+
+def get_preview_keyboard():
+    """أزرار المعاينة الموحدة (لتجنب التكرار)"""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ نشر في القناة", callback_data="preview_publish")],
+        [InlineKeyboardButton("✏️ تعديل الاسم", callback_data="preview_edit_name"),
+         InlineKeyboardButton("💰 تعديل السعر", callback_data="preview_edit_price")],
+        [InlineKeyboardButton("📝 تعديل الوصف", callback_data="preview_edit_desc")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data="preview_cancel")]
+    ])
 
 # ═══ التحقق من صاحبة المتجر ═══
 def is_admin(user_id):
@@ -333,45 +392,39 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     
     # ═══ 1. رفع الصور إلى Supabase ═══
-    await update.message.reply_text("⏳ جاري رفع الصور، يرجى الانتظار...")
+
+        # ═══ 1. رفع الصور إلى Supabase ═══
+    await update.message.reply_text("⏳ جاري رفع الصور، يرجى الانتظار... (قد يستغرق دقيقة)")
     
     photo_urls = []
     failed_photos = []
     
     for idx, photo_id in enumerate(product.get('photos', []), 1):
         try:
-            file_info = await context.bot.get_file(photo_id)
-            telegram_url = file_info.file_path
-            response = requests.get(telegram_url, timeout=30)
-            response.raise_for_status()
-            image_bytes = response.content
-            
-            compressed_bytes = compress_image(image_bytes, max_width=800, quality=85)
-            safe_name = f"product_{uuid.uuid4().hex[:10]}.jpg"
-            public_url = upload_image_to_supabase(compressed_bytes, safe_name)
-            
-            if public_url:
-                photo_urls.append(public_url)
-            else:
-                failed_photos.append(idx)
+            # استخدام الدالة القوية
+            public_url = await download_and_upload_image(context, photo_id)
+            photo_urls.append(public_url)
+            print(f"✅ [DEBUG] تم رفع الصورة {idx} بنجاح: {public_url}")
         except Exception as e:
-            print(f"⚠️ فشل رفع الصورة {photo_id}: {e}")
+            print(f"❌ فشل رفع الصورة {idx} نهائياً بعد 3 محاولات: {e}")
             failed_photos.append(idx)
     
-    # ═══ 2. التحقق من نجاح رفع الصور ═══
+    # ═══ التحقق ═══
     if not photo_urls:
         await update.message.reply_text(
-            "❌ فشل رفع جميع الصور. يرجى المحاولة مرة أخرى.\n"
-            "أرسلي /cancel ثم ابدئي من جديد."
+            "❌ فشل رفع جميع الصور إلى القاعدة.\n"
+            "هذه المشكلة بسبب ضعف الاتصال بالإنترنت.\n"
+            "يرجى المحاولة مرة أخرى لاحقاً."
         )
         return ConversationHandler.END
     
     if failed_photos:
         await update.message.reply_text(
             f"⚠️ تم رفع {len(photo_urls)} من {len(product.get('photos', []))} صورة.\n"
-            f"الصور الفاشلة: {', '.join(map(str, failed_photos))}"
+            f"الصور الفاشلة: {', '.join(map(str, failed_photos))}\n"
+            f"💡 يمكنك المتابعة، لكن الصور الفاشلة لن تظهر في المتجر الإلكتروني."
         )
-    
+
     # ═══ 3. حفظ بيانات المنتج مؤقتاً في user_data ═══
     context.user_data['preview_product'] = {
         'name': product['name'],
@@ -395,15 +448,8 @@ async def get_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     # ═══ 5. عرض المعاينة ═══
-    preview_keyboard = [
-        [InlineKeyboardButton("✅ نشر في القناة", callback_data="preview_publish")],
-        [InlineKeyboardButton("✏️ تعديل الاسم", callback_data="preview_edit_name"),
-         InlineKeyboardButton("💰 تعديل السعر", callback_data="preview_edit_price")],
-        [InlineKeyboardButton("📝 تعديل الوصف", callback_data="preview_edit_desc")],
-        [InlineKeyboardButton("❌ إلغاء", callback_data="preview_cancel")]
-    ]
-    reply_markup = InlineKeyboardMarkup(preview_keyboard)
-    
+    reply_markup = get_preview_keyboard()
+
     try:
         if len(photo_urls) == 1:
             await update.message.reply_photo(
@@ -533,11 +579,18 @@ async def preview_edit_field(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "desc": "الوصف الجديد"
     }
     
-    await query.edit_message_caption(
+    await query.message.reply_text(
         f"✏️ أرسلي {field_names.get(field, 'القيمة الجديدة')}:\n"
         f"(أو أرسلي /cancel للإلغاء)",
         parse_mode="HTML"
     )
+
+    # (اختياري) إزالة الأزرار من الرسالة القديمة لمنع الضغط عليها مجدداً
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
     return PREVIEW_PRODUCT
 
 async def preview_apply_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -545,9 +598,13 @@ async def preview_apply_edit(update: Update, context: ContextTypes.DEFAULT_TYPE)
     field = context.user_data.get('preview_editing')
     product = context.user_data.get('preview_product')
     
-    if not field or not product:
-        await update.message.reply_text("⚠️ انتهت صلاحية المعاينة.")
+    if not product:
+        await update.message.reply_text("⚠️ انتهت صلاحية المعاينة. يرجى البدء من جديد.")
         return ConversationHandler.END
+    
+    if not field:
+        await update.message.reply_text("⚠️ يرجى اختيار أحد أزرار التعديل أولاً (الاسم / السعر / الوصف).")
+        return PREVIEW_PRODUCT  # ← نبقى في المعاينة ولا ننهيها
     
     new_value = update.message.text
     
@@ -580,19 +637,13 @@ async def preview_apply_edit(update: Update, context: ContextTypes.DEFAULT_TYPE)
         is_preview=True
     )
     
-    preview_keyboard = [
-        [InlineKeyboardButton("✅ نشر في القناة", callback_data="preview_publish")],
-        [InlineKeyboardButton("✏️ تعديل الاسم", callback_data="preview_edit_name"),
-         InlineKeyboardButton("💰 تعديل السعر", callback_data="preview_edit_price")],
-        [InlineKeyboardButton("📝 تعديل الوصف", callback_data="preview_edit_desc")],
-        [InlineKeyboardButton("❌ إلغاء", callback_data="preview_cancel")]
-    ]
+    reply_markup = get_preview_keyboard()
     
     await update.message.reply_photo(
         photo=product['photo'],
         caption=caption,
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(preview_keyboard)
+        reply_markup=get_preview_keyboard()
     )
     return PREVIEW_PRODUCT
 
@@ -607,12 +658,12 @@ async def preview_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if product:
         try:
             from database import supabase
-            for photo_url in product.get('photos', []):
-                filename = photo_url.split('/')[-1]
-                supabase.storage.from_("products").remove([filename])
+            filenames = [url.split('/')[-1] for url in product.get('photos', [])]
+            if filenames:
+                supabase.storage.from_("products").remove(filenames)
         except Exception as e:
             print(f"⚠️ فشل حذف الصور المؤقتة: {e}")
-    
+
     # ═══ 2. مسح البيانات المؤقتة ═══
     context.user_data.pop('preview_product', None)
     context.user_data.pop('preview_editing', None)
@@ -622,10 +673,20 @@ async def preview_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ✅ التحقق من وجود صور معلقة وحذفها
+    product = context.user_data.get('preview_product')
+    if product:
+        try:
+            from database import supabase
+            filenames = [url.split('/')[-1] for url in product.get('photos', [])]
+            if filenames:
+                supabase.storage.from_("products").remove(filenames)
+        except Exception as e:
+            print(f"⚠️ فشل حذف الصور المؤقتة: {e}")
+            
     context.user_data.clear()
     await update.message.reply_text("❌ تم الإلغاء.")
     return ConversationHandler.END
-
 
 async def list_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -1078,18 +1139,54 @@ def build_caption(product_name, price, attributes, description, product_id, is_p
         caption = "👁️ <b>معاينة المنتج:</b>\n\n" + caption
     
     return caption, smart_link
+async def timeout_cleanup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تنظيف الصور عند انتهاء وقت المحادثة"""
+    product = context.user_data.get('preview_product')
+    if product:
+        try:
+            from database import supabase
+            filenames = [url.split('/')[-1] for url in product.get('photos', [])]
+            if filenames:
+                supabase.storage.from_("products").remove(filenames)
+        except Exception as e:
+            print(f"⚠️ فشل حذف الصور عند انتهاء المهلة: {e}")
+    
+    context.user_data.clear()
+    await update.effective_chat.send_message("⏳ انتهت مهلة المحادثة وتم إلغاء العملية وتنظيف الصور المؤقتة.")
+    return ConversationHandler.END
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تسجيل الأخطاء وإبلاغ المستخدم بلطف"""
+    # تسجيل الخطأ في الـ Console
+    print(f"⚠️ [ERROR] حدث خطأ: {context.error}")
+    
+    # إذا كان الخطأ هو انتهاء مهلة (TimedOut)
+    import telegram
+    if isinstance(context.error, telegram.error.TimedOut):
+        if update and hasattr(update, 'effective_message'):
+            try:
+                await update.effective_message.reply_text(
+                    "⚠️ حدث خطأ في الشبكة أثناء محاولة رفع الصورة.\n"
+                    "قد تكون الصورة كبيرة أو الاتصال بطيئاً.\n"
+                    "💡 يرجى المحاولة مرة أخرى، أو استخدام صورة أصغر حجماً."
+                )
+            except Exception as e:
+                print(f"⚠️ فشل إرسال رسالة الخطأ للمستخدم: {e}")
 
 # ═══ Main ═══
 def main():
     token = load_token()
     request = HTTPXRequest(
-        connect_timeout=30.0,
-        read_timeout=30.0,
-        write_timeout=30.0,
-        pool_timeout=30.0,
+        connect_timeout=60.0,
+        read_timeout=60.0,
+        write_timeout=60.0,
+        pool_timeout=60.0,
+        media_write_timeout=120.0,  # ✅ وقت إضافي لرفع الصور والوسائط
+
     )
 
     app = Application.builder().token(token).request(request).get_updates_request(request).build()
+    # ✅ إضافة معالج الأخطاء العام
+    app.add_error_handler(error_handler)
 
     # ═══ 1. الإضافة ═══
     conv_handler = ConversationHandler(
@@ -1114,6 +1211,10 @@ def main():
                 CallbackQueryHandler(preview_edit_field, pattern="^preview_edit_"),
                 CallbackQueryHandler(preview_cancel, pattern="^preview_cancel$"),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, preview_apply_edit),
+            ],
+            # ✅ إضافة معالج انتهاء المهلة
+            ConversationHandler.TIMEOUT: [
+                MessageHandler(filters.ALL, timeout_cleanup)
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
