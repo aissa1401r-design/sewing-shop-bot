@@ -1233,14 +1233,10 @@ async def handle_quick_actions(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     
     data = query.data
-    # استخراج الـ ID من النص (سواء كان quick_edit_5 أو quick_delete_5)
     p_id = int(data.split("_")[-1]) 
     
     if "quick_edit" in data:
-        # ✅ حفظ الـ ID في الذاكرة
         context.user_data['edit_id'] = p_id
-        
-        # ✅ عرض خيارات التعديل مباشرة
         keyboard = [
             [InlineKeyboardButton("💰 تعديل السعر", callback_data="edit_price")],
             [InlineKeyboardButton("✍️ تعديل الاسم", callback_data="edit_name")],
@@ -1250,6 +1246,7 @@ async def handle_quick_actions(update: Update, context: ContextTypes.DEFAULT_TYP
             f"🛠️ ماذا تريدين أن تعدلي للمنتج (ID: {p_id})؟", 
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return ConversationHandler.END  # ✅ مهم جداً
         
     elif "quick_delete" in data:
         # ✅ حفظ الـ ID في الذاكرة
@@ -1270,6 +1267,7 @@ async def handle_quick_actions(update: Update, context: ContextTypes.DEFAULT_TYP
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        return ConversationHandler.END
         
 # ═══ Main ═══
 def main():
@@ -1327,7 +1325,7 @@ def main():
         entry_points=[
             CommandHandler("edit", edit_start),
             MessageHandler(filters.Regex("^✏️ تعديل منتج$"), edit_start),
-            CallbackQueryHandler(handle_quick_actions, pattern="^quick_edit_") 
+            CallbackQueryHandler(edit_choose_field, pattern="^edit_") # ✅ ضروري جداً هنا
         ],
         states={
             EDIT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_get_id)],
@@ -1345,7 +1343,7 @@ def main():
         entry_points=[
             CommandHandler("delete", delete_start),
             MessageHandler(filters.Regex("^🗑️ حذف منتج$"), delete_start),
-            CallbackQueryHandler(handle_quick_actions, pattern="^quick_delete_")
+            CallbackQueryHandler(delete_confirm, pattern="^confirm_delete_") # ✅ ضروري جداً هنا
         ],
         states={
             DELETE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_get_id)],
@@ -1383,7 +1381,11 @@ def main():
             MessageHandler(filters.Regex("^🔍 بحث عن منتج$"), search_start)
         ],
         states={
-            ASK_SEARCH_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_execute)],
+            ASK_SEARCH_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_execute)
+            CallbackQueryHandler(handle_quick_actions, pattern="^quick_") 
+
+            ],
+        
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         conversation_timeout=600,
