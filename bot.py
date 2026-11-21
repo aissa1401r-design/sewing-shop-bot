@@ -143,13 +143,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "other": "🛍️ آخر"
     }
 
-    if query.data in ("order_start", "order_start_red"):
-        await query.answer()
-        return
-    
+    # 1. الرد على الزر فوراً (ضروري جداً)
     await query.answer()
-    
-    elif query.data.startswith("cat_") or query.data.startswith("page_"):
+
+    # 2. تجاهل الأزرار التي لا تفعل شيئاً (مثل رقم الصفحة)
+    if query.data == "ignore":
+        return
+
+    # 3. معالجة الأزرار
+    if query.data.startswith("cat_") or query.data.startswith("page_"):
         if query.data.startswith("cat_"):
             cat_id = query.data.replace("cat_", "")
             page = 0
@@ -157,7 +159,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parts = query.data.split("_")
             cat_id = parts[1]
             page = int(parts[2])
-
+            
+        # ... (باقي كود الأقسام كما هو) ...
         products = load_products()  # من Supabase (قائمة)
         filtered_products = [p for p in products if p.get("category") == cat_id]
         
