@@ -5,7 +5,7 @@ Sewing Shop Telegram Bot
 
 import json
 import os
-from database import load_products as db_load_products, save_order
+from database import load_products, save_order
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import (
@@ -39,14 +39,6 @@ def load_token():
     
     raise ValueError("⚠️ BOT_TOKEN غير موجود في متغيرات البيئة أو .env")
 
-def load_products():
-    """قراءة المنتجات من ملف supabase"""
-    try:
-        return db_load_products()
-    except Exception as e:
-        print(f"⚠️ فشل جلب المنتجات من Supabase: {e}")
-        return []
-
 # ═══ أوامر البوت ═══
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """الترحيب الأول"""
@@ -79,13 +71,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             row = []
     if row:
         keyboard.append(row)
-    
+    # ✅ إضافة زر عرض كل المنتجات
+    keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
+
         # ═══ إضافة زر القناة ═══
     CHANNEL_URL = "https://t.me/+Oxpv5bHOJFBlZmE0"  # ← استبدل هذا برابط قناتك
+    CONTACT_URL = "https://t.me/alfadail_support_bot"  # ← ضع هنا رابط حساب صاحبة المتجر
     
     keyboard.append([
         InlineKeyboardButton("🛍️ زيارة القناة", url=CHANNEL_URL),
-        InlineKeyboardButton("📞 تواصل معنا", callback_data="contact")
+        InlineKeyboardButton("📞 تواصل معنا", url=CONTACT_URL)
     ])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -153,9 +148,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     await query.answer()
-
-    if query.data == "contact":
-        await query.edit_message_text("📞 للتواصل مع صاحبة المتجر:\n@اسم_حساب_صاحبة_المتجر")
     
     elif query.data.startswith("cat_") or query.data.startswith("page_"):
         if query.data.startswith("cat_"):
@@ -206,12 +198,89 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬅️ رجوع للأقسام", callback_data="back_home")]
         ]
         
-        if page == 0:
-            keyboard[1].pop(0)
-            keyboard[1].insert(0, InlineKeyboardButton(" ", callback_data="ignore"))
-        if page == len(filtered_products) - 1:
-            keyboard[1].pop()
-            keyboard[1].append(InlineKeyboardButton(" ", callback_data="ignore"))
+        # ✅ إخفاء الزر بدلاً من وضع مسافة فارغة
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"page_{cat_id}_{page-1}"))
+        
+        nav_row.append(InlineKeyboardButton(f"{page+1}/{len(filtered_products)}", callback_data="ignore"))
+        
+        if page < len(filtered_products) - 1:
+            nav_row.append(InlineKeyboardButton("التالي ➡️", callback_data=f"page_{cat_id}_{page+1}"))
+        
+        # استبدال صف التنقل القديم بالجديد
+        keyboard[1] = nav_row
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        try:
+            # محاولة تعديل الرسالة الحالية
+            if photo_id:
+                # إذا كان المنتج له صورة
+                await query.edit_message_media(
+                    media=InputMediaPhoto(media=photo_id, caption=caption, parse_mode="HTML"),
+                    reply_markup=reply_markup
+                )
+            else:
+                # إذا كان المنتج نصياً فقط
+                await query.edit_message_text(caption, parse_mode="HTML", reply_markup=reply_markup)
+        except Exception as e:
+            print(f"⚠️ فشل تعديل الرسالة (قد تكون نصية أو قديمة): {e}")
+            # الحل الآمن: إرسال رسالة جديدة بدلاً من حذف القديمة
+            try:
+                if photo_id:
+                    await query.message.reply_photo(photo=photo_id, caption=caption, parse_mode="HTML", reply_markup=reply_markup)
+                else:
+                    await query.message.reply_text(caption, parse_mode="HTML", reply_markup=reply_markup)
+            except Exception as e2:
+                print(f"⚠️ فشل إرسال رسالة جديدة أيضاً: {e2}")
+
+    elif query.data.startswith("all_products_"):
+        # استخراج رقم الصفحة
+        page = int(query.data.split("_")[-1])
+        
+        products = load_products()
+        if not products:
+            await query.edit_message_text("📭 لا توجد منتجات حالياً في المتجر.")
+            return
+
+        # التأكد من أن رقم الصفحة لا يتجاوز عدد المنتجات
+        if page < 0:
+            page = 0
+        elif page >= len(products):
+            page = len(products) - 1
+
+        p = products[page]
+        photo_id = p.get("photo")
+        caption = f"<b>{p['name']}</b>\n\n"
+        caption += f"💰 السعر: {p['price']} دج\n"
+        
+        ARABIC_NAMES = {"colors": "🎨 الألوان", "sizes": "📏 المقاسات", "volume": "🧴 السعة"}
+        for k, v in p.get('attributes', {}).items():
+            arabic_name = ARABIC_NAMES.get(k, k)
+            if isinstance(v, list):
+                v = "، ".join([str(item).strip() for item in v])
+            caption += f"{arabic_name}: {v}\n"
+        caption += f"\n<i>{p.get('description', '')}</i>"
+
+        # بناء أزرار التنقل
+        keyboard = [
+            [InlineKeyboardButton("🛒 اطلب الآن", callback_data=f"order_dyn_{p['id']}")],
+        ]
+        
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"all_products_{page-1}"))
+        
+        nav_row.append(InlineKeyboardButton(f"{page+1}/{len(products)}", callback_data="ignore"))
+        
+        if page < len(products) - 1:
+            nav_row.append(InlineKeyboardButton("التالي ➡️", callback_data=f"all_products_{page+1}"))
+            
+        if nav_row:
+            keyboard.append(nav_row)
+            
+        keyboard.append([InlineKeyboardButton("⬅️ رجوع للأقسام", callback_data="back_home")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -225,12 +294,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_text(caption, parse_mode="HTML", reply_markup=reply_markup)
         except Exception as e:
             print(f"⚠️ فشل تعديل الرسالة: {e}")
+            # الحل الآمن
             try:
-                await query.message.delete()
-            except:
-                pass
-            await query.message.reply_text(caption, parse_mode="HTML", reply_markup=reply_markup)
-
+                if photo_id:
+                    await query.message.reply_photo(photo=photo_id, caption=caption, parse_mode="HTML", reply_markup=reply_markup)
+                else:
+                    await query.message.reply_text(caption, parse_mode="HTML", reply_markup=reply_markup)
+            except Exception as e2:
+                print(f"⚠️ فشل إرسال رسالة جديدة أيضاً: {e2}")
+    
     elif query.data == "back_home":
         # ═══ قراءة الأقسام من products.json (وليس من Supabase) ═══
         categories = {}
@@ -292,14 +364,22 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['selected_product'] = selected_product
     context.user_data['order'] = {'product': selected_product}
     
-    # 2. البحث عن المنتج في الملف لمعرفة سماته (اللون، المقاس، إلخ)
-    data = load_products()  # ← هذه قائمة منتجات الآن
+    # 2. البحث عن المنتج بالـ ID (أكثر أماناً من الاسم)
     product_obj = None
+    product_id_from_callback = None
     
-    # البحث عن المنتج بالاسم في القائمة
+    # استخراج الـ ID من الزر إن وجد
+    if query.data.startswith("order_dyn_"):
+        product_id_from_callback = int(query.data.replace("order_dyn_", ""))
+        
+    data = load_products()
     for p in data:
-        if p.get("name") == selected_product:
+        # إذا كان لدينا ID، نبحث به. وإلا نبحث بالاسم (للروابط الذكية)
+        if (product_id_from_callback and p.get("id") == product_id_from_callback) or \
+           (not product_id_from_callback and p.get("name") == selected_product):
             product_obj = p
+            if not selected_product:
+                selected_product = p["name"] # تحديث الاسم إذا لم يكن موجوداً
             break
             
     # 3. تجهيز قائمة الأسئلة الديناميكية
@@ -455,18 +535,21 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         save_order(order_data)
         # ═════════════════════════════════
-        # 4. إرسال الإشعار للمجموعة (في الخلفية)
-        try:
-            admin_id = int(os.getenv("ADMIN_CHAT_ID", "-5454243830"))
-            await context.bot.send_message(
-                chat_id=admin_id,
-                text=admin_message,
-                parse_mode="HTML"
-            )
-            print("✅ تم إرسال الإشعار للمجموعة بنجاح.")
-        except Exception as e:
-            print(f"⚠️ فشل إرسال الإشعار للمجموعة: {e}")
-        
+        # 4. إرسال الإشعار للمجموعة
+        admin_id = os.getenv("ADMIN_CHAT_ID")
+        if admin_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=int(admin_id), 
+                    text=admin_message, 
+                    parse_mode="HTML"
+                )
+                print("✅ تم إرسال الإشعار للمجموعة بنجاح.")
+            except Exception as e:
+                print(f"⚠️ فشل إرسال الإشعار للمجموعة (تأكد من ADMIN_CHAT_ID): {e}")
+        else:
+            print("⚠️ تم تجاهل الإشعار: ADMIN_CHAT_ID غير موجود.")
+
         return ConversationHandler.END
 
     else:
@@ -533,6 +616,11 @@ def main():
         .get_updates_request(request)
         .build()
     )
+    
+    # ✅ التحقق من ADMIN_CHAT_ID
+    admin_id = os.getenv("ADMIN_CHAT_ID")
+    if not admin_id:
+        print("⚠️ تحذير: ADMIN_CHAT_ID غير معين. لن تصل إشعارات الطلبات!")
 
     # ═══ إضافة المعالجات (كما هي) ═══
     app.add_handler(CommandHandler("start", start))
