@@ -84,3 +84,13 @@ def update_message_ids(product_id, message_ids):
         supabase.table("products").update({"message_ids": message_ids}).eq("id", product_id).execute()
     except Exception as e:
         print(f"⚠️ فشل تحديث message_ids: {e}")
+
+def search_products_by_name(search_term):
+    """البحث عن منتجات بالاسم (يبحث عن أي تطابق جزئي)"""
+    try:
+        # استخدام ilike للبحث غير الحساس لحالة الأحرف
+        response = supabase.table("products").select("*").ilike("name", f"%{search_term}%").execute()
+        return response.data
+    except Exception as e:
+        print(f"⚠️ خطأ في البحث عن المنتجات: {e}")
+        return []

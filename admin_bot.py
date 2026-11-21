@@ -25,6 +25,7 @@ PREVIEW_PRODUCT = 6  # ✅ حالة جديدة: معاينة المنتج قبل
 EDIT_ID, EDIT_FIELD, EDIT_VALUE = range(10, 13)
 DELETE_ID, DELETE_CONFIRM = range(13, 15)
 ASK_PHOTOS_ID, ASK_MORE_PHOTOS = range(20, 22)
+ASK_SEARCH_QUERY = 7  # ✅ حالة جديدة للبحث
 
 MAX_PHOTOS = 10  # ✅ حد أقصى للصور
 
@@ -189,7 +190,8 @@ async def start_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [KeyboardButton("➕ إضافة منتج")],
-        [KeyboardButton("📦 عرض المنتجات"), KeyboardButton("📊 الإحصائيات")],
+        [KeyboardButton("📦 عرض المنتجات"), KeyboardButton("🔍 بحث عن منتج")], # ✅ زر جديد
+        [KeyboardButton("📊 الإحصائيات")],
         [KeyboardButton("🗑️ حذف منتج"), KeyboardButton("✏️ تعديل منتج")],
         [KeyboardButton("🖼️ إضافة صور"), KeyboardButton("📦 الطلبات")]
     ]
@@ -1172,6 +1174,103 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             except Exception as e:
                 print(f"⚠️ فشل إرسال رسالة الخطأ للمستخدم: {e}")
 
+# ═══ البحث عن منتج ═══
+async def search_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await deny_non_admin(update)
+        return ConversationHandler.END
+    await update.message.reply_text("🔍 أرسلي اسم المنتج (أو جزءاً منه) للبحث عنه:")
+    return ASK_SEARCH_QUERY
+
+async def search_execute(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query_text = update.message.text.strip()
+    if len(query_text) < 2:
+        await update.message.reply_text("⚠️ يرجى إدخال حرفين على الأقل للبحث.")
+        return ASK_SEARCH_QUERY
+
+    from database import search_products_by_name
+    results = search_products_by_name(query_text)
+
+    if not results:
+        await update.message.reply_text(f"📭 لا توجد منتجات تطابق '{query_text}'. حاولي بكلمة أخرى.")
+        return ASK_SEARCH_QUERY
+
+    await update.message.reply_text(f"🔍 تم العثور على {len(results)} منتج. جاري عرضها...")
+    
+    # عرض النتائج
+    for p in results:
+        caption = f"🆔 <b>ID: {p['id']}</b> | {p['name']}\n"
+        caption += f"💰 السعر: {p['price']} دج\n"
+        
+        # أزرار لكل منتج
+        keyboard = [
+            [
+                InlineKeyboardButton("✏️ تعديل", callback_data=f"quick_edit_{p['id']}"),
+                InlineKeyboardButton("🗑️ حذف", callback_data=f"quick_delete_{p['id']}")
+            ]
+        ]
+        
+        # إذا كان هناك صورة، نرسلها مع النص
+        if p.get('photo'):
+            try:
+                await update.message.reply_photo(
+                    photo=p['photo'],
+                    caption=caption,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+            except Exception:
+                # إذا فشلت الصورة، نرسل النص فقط
+                await update.message.reply_text(caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            await update.message.reply_text(caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    await update.message.reply_text("💡 يمكنك البحث عن منتج آخر، أو الضغط على زر للتعديل/الحذف.")
+    return ASK_SEARCH_QUERY
+
+async def handle_quick_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    # استخراج الـ ID من النص (سواء كان quick_edit_5 أو quick_delete_5)
+    p_id = int(data.split("_")[-1]) 
+    
+    if "quick_edit" in data:
+        # ✅ حفظ الـ ID في الذاكرة
+        context.user_data['edit_id'] = p_id
+        
+        # ✅ عرض خيارات التعديل مباشرة
+        keyboard = [
+            [InlineKeyboardButton("💰 تعديل السعر", callback_data="edit_price")],
+            [InlineKeyboardButton("✍️ تعديل الاسم", callback_data="edit_name")],
+            [InlineKeyboardButton("📝 تعديل الوصف", callback_data="edit_desc")],
+        ]
+        await query.message.reply_text(
+            f"🛠️ ماذا تريدين أن تعدلي للمنتج (ID: {p_id})؟", 
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        
+    elif "quick_delete" in data:
+        # ✅ حفظ الـ ID في الذاكرة
+        context.user_data['delete_id'] = p_id
+        
+        # جلب اسم المنتج للتأكيد
+        from database import load_products
+        products = load_products()
+        product_name = next((p["name"] for p in products if p["id"] == p_id), "غير معروف")
+        
+        # ✅ عرض تأكيد الحذف مباشرة
+        keyboard = [
+            [InlineKeyboardButton("✅ نعم، احذف", callback_data="confirm_delete_yes")],
+            [InlineKeyboardButton("❌ إلغاء", callback_data="confirm_delete_no")]
+        ]
+        await query.message.reply_text(
+            f"⚠️ هل أنت متأكدة من حذف المنتج:\n<b>{product_name}</b> (ID: {p_id})؟",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        
 # ═══ Main ═══
 def main():
     token = load_token()
@@ -1274,6 +1373,21 @@ def main():
         per_message=False 
     )
     app.add_handler(photos_handler)
+
+        # ═══ 5. البحث ═══
+    search_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("search", search_start),
+            MessageHandler(filters.Regex("^🔍 بحث عن منتج$"), search_start)
+        ],
+        states={
+            ASK_SEARCH_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_execute)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        conversation_timeout=600,
+        per_message=False
+    )
+    app.add_handler(search_handler)
 
     # ═══ 5. معالج اختيار الألبوم (معالج واحد فقط) ═══
     app.add_handler(CallbackQueryHandler(handle_album_choice, pattern="^album_"))
