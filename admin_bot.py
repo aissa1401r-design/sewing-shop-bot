@@ -1326,7 +1326,7 @@ def main():
     edit_handler = ConversationHandler(
         entry_points=[
             CommandHandler("edit", edit_start),
-            MessageHandler(filters.Regex("^✏️ تعديل منتج$"), edit_start)
+            MessageHandler(filters.Regex("^✏️ تعديل منتج$"), edit_start),
             CallbackQueryHandler(handle_quick_actions, pattern="^quick_edit_") 
         ],
         states={
@@ -1344,7 +1344,7 @@ def main():
     delete_handler = ConversationHandler(
         entry_points=[
             CommandHandler("delete", delete_start),
-            MessageHandler(filters.Regex("^🗑️ حذف منتج$"), delete_start)
+            MessageHandler(filters.Regex("^🗑️ حذف منتج$"), delete_start),
             CallbackQueryHandler(handle_quick_actions, pattern="^quick_delete_")
         ],
         states={
