@@ -1381,7 +1381,7 @@ def main():
             MessageHandler(filters.Regex("^🔍 بحث عن منتج$"), search_start)
         ],
         states={
-            ASK_SEARCH_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_execute)
+            ASK_SEARCH_QUERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, search_execute),
             CallbackQueryHandler(handle_quick_actions, pattern="^quick_") 
 
             ],
