@@ -1327,6 +1327,7 @@ def main():
         entry_points=[
             CommandHandler("edit", edit_start),
             MessageHandler(filters.Regex("^✏️ تعديل منتج$"), edit_start)
+            CallbackQueryHandler(handle_quick_actions, pattern="^quick_edit_") 
         ],
         states={
             EDIT_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_get_id)],
@@ -1344,6 +1345,7 @@ def main():
         entry_points=[
             CommandHandler("delete", delete_start),
             MessageHandler(filters.Regex("^🗑️ حذف منتج$"), delete_start)
+            CallbackQueryHandler(handle_quick_actions, pattern="^quick_delete_")
         ],
         states={
             DELETE_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, delete_get_id)],
