@@ -133,6 +133,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة النقرات"""
     query = update.callback_query
+    # ✅ تجاهل الأزرار التي تخص الطلب
+    if query.data.startswith("order_dyn_") or query.data == "back_home":
+        await query.answer()
+        return
+    
 
     ARABIC_CATEGORIES = {
         "jalabib": "👗 جلابيب",
@@ -307,7 +312,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print(f"⚠️ فشل إرسال رسالة جديدة أيضاً: {e2}")
     
     elif query.data == "back_home":
-        # ═══ قراءة الأقسام من products.json (وليس من Supabase) ═══
+        # ═══ قراءة الأقسام من products.json ═══
         categories = {}
         try:
             with open("products.json", "r", encoding="utf-8") as f:
@@ -333,7 +338,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if row:
             keyboard.append(row)
         
-        keyboard.append([InlineKeyboardButton("📞 تواصل معنا", callback_data="contact")])
+        # ✅ إضافة زر عرض كل المنتجات هنا
+        keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
+        
+        # ✅ استخدام رابط التواصل المباشر
+        CONTACT_URL = "https://t.me/alfadail_support_bot"
+        keyboard.append([InlineKeyboardButton("📞 تواصل معنا", url=CONTACT_URL)])
+        
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
@@ -560,7 +571,6 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
         
 # أضف هذه الدالة في bot.py (بعد دالة start)
-
 async def go_back_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """العودة للقائمة الرئيسية أثناء المحادثة"""
     query = update.callback_query
@@ -592,7 +602,13 @@ async def go_back_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if row:
         keyboard.append(row)
     
-    keyboard.append([InlineKeyboardButton("📞 تواصل معنا", callback_data="contact")])
+    # ✅ إضافة زر عرض كل المنتجات هنا أيضاً
+    keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
+    
+    # ✅ استخدام رابط التواصل المباشر
+    CONTACT_URL = "https://t.me/alfadail_support_bot"
+    keyboard.append([InlineKeyboardButton("📞 تواصل معنا", url=CONTACT_URL)])
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
