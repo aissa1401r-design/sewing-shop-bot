@@ -22,21 +22,18 @@ SMART_LINKS = {
     "perfum": "عطر الفانيليا"
 }
 
+# ═══ الحالات (States) ═══
 ASK_NAME, ASK_PHONE, ASK_ADDRESS, CONFIRM, ASK_DYNAMIC_ATTR = range(5)
 
 def load_token():
-    # 1. حاول القراءة من متغيرات البيئة (Render)
     token = os.getenv("BOT_TOKEN")
     if token:
         return token
-    
-    # 2. إذا لم يوجد، اقرأ من ملف .env (محلياً)
     if os.path.exists(".env"):
         with open(".env", "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip().startswith("BOT_TOKEN="):
                     return line.strip().split("=", 1)[1].strip().strip('"')
-    
     raise ValueError("⚠️ BOT_TOKEN غير موجود في متغيرات البيئة أو .env")
 
 # ═══ أوامر البوت ═══
@@ -44,14 +41,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """الترحيب الأول"""
     args = context.args
     
-    # ═══ 1. قراءة الأقسام من products.json (الملف المحلي) ═══
     categories = {}
     try:
         with open("products.json", "r", encoding="utf-8") as f:
             data = json.load(f)
             categories = data.get("categories", {})
     except FileNotFoundError:
-        # إذا لم يوجد الملف، نستخدم الأقسام الثابتة
         categories = {
             "jalabib": {"name": "👗 جلابيب"},
             "accessories": {"name": "💍 أكسسوارات"},
@@ -61,7 +56,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "other": {"name": "🛍️ آخر"}
         }
 
-    # بناء الأزرار
     keyboard = []
     row = []
     for cat_id, cat_info in categories.items():
@@ -71,12 +65,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             row = []
     if row:
         keyboard.append(row)
-    # ✅ إضافة زر عرض كل المنتجات
+    
     keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
 
-        # ═══ إضافة زر القناة ═══
-    CHANNEL_URL = "https://t.me/+Oxpv5bHOJFBlZmE0"  # ← استبدل هذا برابط قناتك
-    CONTACT_URL = "https://t.me/alfadail_support_bot"  # ← ضع هنا رابط حساب صاحبة المتجر
+    CHANNEL_URL = "https://t.me/+Oxpv5bHOJFBlZmE0"
+    CONTACT_URL = "https://t.me/alfadail_support_bot"
     
     keyboard.append([
         InlineKeyboardButton("🛍️ زيارة القناة", url=CHANNEL_URL),
@@ -88,17 +81,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         arg = args[0]
         product_name = None
         
-        SMART_LINKS = {
-            "jalabiya_red": "الجلابية الحمراء",
-            "jalabiya_blue": "الجلابية الزرقاء",
-        }
-        
         if arg in SMART_LINKS:
             product_name = SMART_LINKS[arg]
         elif arg.startswith("product_"):
             try:
                 product_id = int(arg.split("_")[1])
-                products = load_products()  # من Supabase
+                products = load_products()
                 for p in products:
                     if p.get("id") == product_id:
                         product_name = p["name"]
@@ -109,7 +97,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if product_name:
             context.user_data['selected_product'] = product_name
             smart_keyboard = [
-                [InlineKeyboardButton(f"🛒 اطلب {product_name} الان", callback_data="order_start_red")],
+                [InlineKeyboardButton(f"🛒 اطلب {product_name} الان", callback_data=f"order_dyn_{product_id}")],
                 [InlineKeyboardButton(f"👗 تصفح كل المنتجات", callback_data="back_home")]
             ]
             smart_markup = InlineKeyboardMarkup(smart_keyboard)
@@ -133,19 +121,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة النقرات"""
     query = update.callback_query
-    
-    # 1. الرد على الزر فوراً (ضروري جداً)
     await query.answer()
 
-    # 2. تجاهل الأزرار التي لا تفعل شيئاً (مثل رقم الصفحة)
     if query.data == "ignore":
         return
 
-    # 3. الأزرار التي تخص الطلب (نتركها لـ conv_handler)
     if query.data.startswith("order_dyn_"):
-        return
+        return # نتركها لـ conv_handler
 
-    # 4. معالجة الأزرار
     if query.data.startswith("cat_") or query.data.startswith("page_"):
         if query.data.startswith("cat_"):
             cat_id = query.data.replace("cat_", "")
@@ -185,7 +168,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption += f"{arabic_name}: {v}\n"
         caption += f"\n<i>{p.get('description', '')}</i>"
 
-        # بناء أزرار التنقل
         keyboard = [
             [InlineKeyboardButton("🛒 اطلب الآن", callback_data=f"order_dyn_{p['id']}")],
         ]
@@ -193,25 +175,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         nav_row = []
         if page > 0:
             nav_row.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"page_{cat_id}_{page-1}"))
-        
         nav_row.append(InlineKeyboardButton(f"{page+1}/{len(filtered_products)}", callback_data="ignore"))
-        
         if page < len(filtered_products) - 1:
             nav_row.append(InlineKeyboardButton("التالي ➡️", callback_data=f"page_{cat_id}_{page+1}"))
         
         if nav_row:
             keyboard.append(nav_row)
-            
         keyboard.append([InlineKeyboardButton("⬅️ رجوع للأقسام", callback_data="back_home")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         try:
             if photo_id:
-                await query.edit_message_media(
-                    media=InputMediaPhoto(media=photo_id, caption=caption, parse_mode="HTML"),
-                    reply_markup=reply_markup
-                )
+                await query.edit_message_media(media=InputMediaPhoto(media=photo_id, caption=caption, parse_mode="HTML"), reply_markup=reply_markup)
             else:
                 await query.edit_message_text(caption, parse_mode="HTML", reply_markup=reply_markup)
         except Exception as e:
@@ -222,20 +198,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await query.message.reply_text(caption, parse_mode="HTML", reply_markup=reply_markup)
             except Exception as e2:
-                print(f"⚠️ فشل إرسال رسالة جديدة أيضاً: {e2}")
+                print(f"⚠️ فشل إرسال رسالة جديدة: {e2}")
 
     elif query.data.startswith("all_products_"):
         page = int(query.data.split("_")[-1])
-        
         products = load_products()
         if not products:
             await query.edit_message_text("📭 لا توجد منتجات حالياً في المتجر.")
             return
 
-        if page < 0:
-            page = 0
-        elif page >= len(products):
-            page = len(products) - 1
+        if page < 0: page = 0
+        elif page >= len(products): page = len(products) - 1
 
         p = products[page]
         photo_id = p.get("photo")
@@ -250,32 +223,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption += f"{arabic_name}: {v}\n"
         caption += f"\n<i>{p.get('description', '')}</i>"
 
-        keyboard = [
-            [InlineKeyboardButton("🛒 اطلب الآن", callback_data=f"order_dyn_{p['id']}")],
-        ]
+        keyboard = [[InlineKeyboardButton("🛒 اطلب الآن", callback_data=f"order_dyn_{p['id']}")]]
         
         nav_row = []
-        if page > 0:
-            nav_row.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"all_products_{page-1}"))
-        
+        if page > 0: nav_row.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"all_products_{page-1}"))
         nav_row.append(InlineKeyboardButton(f"{page+1}/{len(products)}", callback_data="ignore"))
-        
-        if page < len(products) - 1:
-            nav_row.append(InlineKeyboardButton("التالي ➡️", callback_data=f"all_products_{page+1}"))
+        if page < len(products) - 1: nav_row.append(InlineKeyboardButton("التالي ➡️", callback_data=f"all_products_{page+1}"))
             
-        if nav_row:
-            keyboard.append(nav_row)
-            
+        if nav_row: keyboard.append(nav_row)
         keyboard.append([InlineKeyboardButton("⬅️ رجوع للأقسام", callback_data="back_home")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         try:
             if photo_id:
-                await query.edit_message_media(
-                    media=InputMediaPhoto(media=photo_id, caption=caption, parse_mode="HTML"),
-                    reply_markup=reply_markup
-                )
+                await query.edit_message_media(media=InputMediaPhoto(media=photo_id, caption=caption, parse_mode="HTML"), reply_markup=reply_markup)
             else:
                 await query.edit_message_text(caption, parse_mode="HTML", reply_markup=reply_markup)
         except Exception as e:
@@ -286,10 +248,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await query.message.reply_text(caption, parse_mode="HTML", reply_markup=reply_markup)
             except Exception as e2:
-                print(f"⚠️ فشل إرسال رسالة جديدة أيضاً: {e2}")
+                print(f"⚠️ فشل إرسال رسالة جديدة: {e2}")
     
     elif query.data == "back_home":
-        # ═══ قراءة الأقسام من products.json ═══
         categories = {}
         try:
             with open("products.json", "r", encoding="utf-8") as f:
@@ -297,12 +258,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 categories = data.get("categories", {})
         except FileNotFoundError:
             categories = {
-                "jalabib": {"name": "👗 جلابيب"},
-                "accessories": {"name": "💍 أكسسوارات"},
-                "perfumes": {"name": "🧴 عطور"},
-                "oils": {"name": "🌿 زيوت"},
-                "home": {"name": "🏠 مستلزمات منزلية"},
-                "other": {"name": "🛍️ آخر"}
+                "jalabib": {"name": "👗 جلابيب"}, "accessories": {"name": "💍 أكسسوارات"},
+                "perfumes": {"name": "🧴 عطور"}, "oils": {"name": "🌿 زيوت"},
+                "home": {"name": "🏠 مستلزمات منزلية"}, "other": {"name": "🛍️ آخر"}
             }
 
         keyboard = []
@@ -312,8 +270,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if len(row) == 2:
                 keyboard.append(row)
                 row = []
-        if row:
-            keyboard.append(row)
+        if row: keyboard.append(row)
         
         keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
         
@@ -321,27 +278,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append([InlineKeyboardButton("📞 تواصل معنا", url=CONTACT_URL)])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
         try:
-            # محاولة تعديل الرسالة الحالية (إذا كانت نصية)
-            await query.edit_message_text(
-                "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
-                reply_markup=reply_markup
-            )
+            await query.edit_message_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
         except Exception:
-            # إذا كانت الرسالة الحالية صورة، نرسل رسالة جديدة
-            await query.message.reply_text(
-                "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
-                reply_markup=reply_markup
-            )
+            await query.message.reply_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
 
+# ═══ استمارة الطلب ═══
 async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """بدء المحادثة"""
     print("[DEBUG] دخلنا الى order_start")
     query = update.callback_query
     await query.answer()
 
-    # 1. هل أتى من رابط ذكي أو من زر الطلب؟
     selected_product = context.user_data.get('selected_product')
     
     if not selected_product and query.data.startswith("order_dyn_"):
@@ -358,7 +305,6 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['selected_product'] = selected_product
     context.user_data['order'] = {'product': selected_product}
     
-    # 2. البحث عن المنتج بالـ ID
     product_obj = None
     product_id_from_callback = None
     
@@ -370,11 +316,9 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if (product_id_from_callback and p.get("id") == product_id_from_callback) or \
            (not product_id_from_callback and p.get("name") == selected_product):
             product_obj = p
-            if not selected_product:
-                selected_product = p["name"]
+            if not selected_product: selected_product = p["name"]
             break
             
-    # 3. تجهيز الأسئلة الديناميكية
     context.user_data['remaining_attrs'] = []
     if product_obj:
         attrs = product_obj.get("attributes", {})
@@ -382,7 +326,6 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if isinstance(v, list) and v:
                 context.user_data['remaining_attrs'].append({'key': k, 'options': v})
     
-    # 4. هل هناك سؤال ديناميكي؟
     if context.user_data['remaining_attrs']:
         attr_data = context.user_data['remaining_attrs'].pop(0)
         context.user_data['current_attr_key'] = attr_data['key']
@@ -393,10 +336,8 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         ARABIC_NAMES = {"colors": "اللون", "sizes": "المقاس", "volume": "السعة"}
         display_name = ARABIC_NAMES.get(attr_data['key'], attr_data['key'])
-            
         text = f"📝 ممتاز! لنبدأ طلبك لـ <b>{selected_product}</b>.\n\nاختر <b>{display_name}</b>:"
         
-        # ✅ التحقق من وجود صورة
         if query.message.photo:
             await query.edit_message_caption(caption=text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
         else:
@@ -404,35 +345,53 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_DYNAMIC_ATTR
     else:
         text = "📝 ممتاز! لنبدأ طلبك.\n\nما هو <b>اسمك الكامل</b>؟"
-        
-        # ✅ التحقق من وجود صورة
         if query.message.photo:
             await query.edit_message_caption(caption=text, parse_mode="HTML")
         else:
             await query.edit_message_text(text, parse_mode="HTML")
         return ASK_NAME
+
+async def get_dynamic_attr(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    selected_value = query.data.replace("attr_", "")
+    attr_key = context.user_data.get('current_attr_key')
+    
+    ARABIC_NAMES = {"colors": "اللون", "sizes": "المقاس", "volume": "السعة"}
+    display_key = ARABIC_NAMES.get(attr_key, attr_key)
+    context.user_data['order'][display_key] = selected_value
+    
+    if context.user_data['remaining_attrs']:
+        attr_data = context.user_data['remaining_attrs'].pop(0)
+        context.user_data['current_attr_key'] = attr_data['key']
+        
+        keyboard = []
+        for option in attr_data['options']:
+            keyboard.append([InlineKeyboardButton(option, callback_data=f"attr_{option}")])
+            
+        display_name = ARABIC_NAMES.get(attr_data['key'], attr_data['key'])
+        await query.edit_message_text(f"اختر <b>{display_name}</b>:", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+        return ASK_DYNAMIC_ATTR
+    else:
+        await query.edit_message_text("📝 رائع! الآن، ما هو <b>اسمك الكامل</b>؟", parse_mode="HTML")
+        return ASK_NAME
+
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """استلام الاسم"""
-    print("دخلنا الى get_name")
     context.user_data['order']['name'] = update.message.text
     await update.message.reply_text("📞 جيد! الآن، ما هو <b>رقم هاتفك</b>؟", parse_mode="HTML")
     return ASK_PHONE
 
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """استلام الهاتف"""
-    print("دخلنا الى get_phone")
     context.user_data['order']['phone'] = update.message.text
     await update.message.reply_text("📍 رائع! الآن، ما هو <b>عنوانك بالتفصيل</b> (الولاية، البلدية، الشارع)؟", parse_mode="HTML")
     return ASK_ADDRESS
 
 async def get_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """استلام العنوان + عرض الملخص"""
-    print("دخلنا الى get_address")
     context.user_data['order']['address'] = update.message.text
 
     order = context.user_data['order']
     
-    # بناء الملخص ديناميكياً
     summary = f"<b>ملخص طلبك:</b>\n\n"
     summary += f"📦 المنتج: {order.get('product', 'غير محدد')}\n"
     if 'اللون' in order: summary += f"🎨 اللون: {order['اللون']}\n"
@@ -453,17 +412,12 @@ async def get_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return CONFIRM
 
 async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """تأكيد أو إلغاء"""
-    print("دخلنا الى confirm_order")
     query = update.callback_query
-    
-    # 1. الرد على الزر فوراً (حتى لا تنتهي صلاحيته)
     await query.answer()
 
     if query.data == "confirm_yes":
         order = context.user_data.get('order', {})
 
-        # 2. تجهيز بيانات الطلب أولاً
         order_data = {
             "product": order.get('product'),
             "color": order.get('اللون', ''),
@@ -475,21 +429,18 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "customer_username": query.from_user.username or "لا يوجد",
         }
         
-        # 3. حفظ الطلب في قاعدة البيانات
         saved_order = save_order(order_data)
         order_code_msg = ""
         if saved_order and len(saved_order) > 0:
             order_code = saved_order[0].get('order_code', 'غير متوفر')
             order_code_msg = f"\n\n📦 <b>رقم طلبك:</b> <code>{order_code}</code>\n(احتفظي به لتتبع طلبك)"
 
-        # 4. إرسال رسالة التأكيد للزبونة
         await query.edit_message_text(
             f"✅ تم استلام طلبك بنجاح!\n"
             f"سنتواصل معك قريباً إن شاء الله للتأكيد النهائي.{order_code_msg}",
             parse_mode="HTML"
         )
 
-        # 5. تجهيز رسالة الإشعار للمجموعة
         admin_message = f"🔔 <b>طلب جديد</b>\n\n"
         admin_message += f"📦 <b>المنتج: </b>{order.get('product', 'غير محدد')}\n"
         if 'اللون' in order: admin_message += f"🎨 اللون: {order['اللون']}\n"
@@ -500,18 +451,13 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         admin_message += f"📍 العنوان: {order.get('address')}\n"
         admin_message += f"🆔 حساب الزبونة: @{query.from_user.username or 'لا يوجد'}"
         
-        # 6. إرسال الإشعار للمجموعة
         admin_id = os.getenv("ADMIN_CHAT_ID")
         if admin_id:
             try:
-                await context.bot.send_message(
-                    chat_id=int(admin_id), 
-                    text=admin_message, 
-                    parse_mode="HTML"
-                )
+                await context.bot.send_message(chat_id=int(admin_id), text=admin_message, parse_mode="HTML")
                 print("✅ تم إرسال الإشعار للمجموعة بنجاح.")
             except Exception as e:
-                print(f"⚠️ فشل إرسال الإشعار للمجموعة (تأكد من ADMIN_CHAT_ID): {e}")
+                print(f"⚠️ فشل إرسال الإشعار: {e}")
         else:
             print("⚠️ تم تجاهل الإشعار: ADMIN_CHAT_ID غير موجود.")
 
@@ -520,14 +466,11 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text("❌ تم إلغاء الطلب. يمكنك التجول في المتجر.", parse_mode="HTML")
         return ConversationHandler.END
-                
-# أضف هذه الدالة في bot.py (بعد دالة start)
+        
 async def go_back_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """العودة للقائمة الرئيسية أثناء المحادثة"""
     query = update.callback_query
     await query.answer()
     
-    # ═══ قراءة الأقسام من products.json ═══
     categories = {}
     try:
         with open("products.json", "r", encoding="utf-8") as f:
@@ -535,12 +478,9 @@ async def go_back_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
             categories = data.get("categories", {})
     except FileNotFoundError:
         categories = {
-            "jalabib": {"name": "👗 جلابيب"},
-            "accessories": {"name": "💍 أكسسوارات"},
-            "perfumes": {"name": "🧴 عطور"},
-            "oils": {"name": "🌿 زيوت"},
-            "home": {"name": "🏠 مستلزمات منزلية"},
-            "other": {"name": "🛍️ آخر"}
+            "jalabib": {"name": "👗 جلابيب"}, "accessories": {"name": "💍 أكسسوارات"},
+            "perfumes": {"name": "🧴 عطور"}, "oils": {"name": "🌿 زيوت"},
+            "home": {"name": "🏠 مستلزمات منزلية"}, "other": {"name": "🛍️ آخر"}
         }
 
     keyboard = []
@@ -550,50 +490,37 @@ async def go_back_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(row) == 2:
             keyboard.append(row)
             row = []
-    if row:
-        keyboard.append(row)
+    if row: keyboard.append(row)
     
-    # ✅ إضافة زر عرض كل المنتجات هنا أيضاً
     keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
     
-    # ✅ استخدام رابط التواصل المباشر
     CONTACT_URL = "https://t.me/alfadail_support_bot"
     keyboard.append([InlineKeyboardButton("📞 تواصل معنا", url=CONTACT_URL)])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await query.edit_message_text(
-        "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
-        reply_markup=reply_markup
-    )
+    try:
+        await query.edit_message_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
+    except Exception:
+        await query.message.reply_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
     return ConversationHandler.END
 
 def main():
     token = load_token()
     
-    # ═══ إعدادات الشبكة ═══
     request = HTTPXRequest(
-        connect_timeout=30.0,
-        read_timeout=30.0,
-        write_timeout=30.0,
-        pool_timeout=30.0,
+        connect_timeout=30.0, read_timeout=30.0,
+        write_timeout=30.0, pool_timeout=30.0,
     )
     
-    app = (
-        Application.builder()
-        .token(token)
-        .request(request)
-        .get_updates_request(request)
-        .build()
-    )
+    app = Application.builder().token(token).request(request).get_updates_request(request).build()
     
-    # ✅ التحقق من ADMIN_CHAT_ID
     admin_id = os.getenv("ADMIN_CHAT_ID")
     if not admin_id:
         print("⚠️ تحذير: ADMIN_CHAT_ID غير معين. لن تصل إشعارات الطلبات!")
 
-    # ═══ إضافة المعالجات (كما هي) ═══
     app.add_handler(CommandHandler("start", start))
+    
     conv_handler = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(order_start, pattern="^order_start$"),
@@ -614,24 +541,18 @@ def main():
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    # ═══ اكتشاف بيئة التشغيل ═══
-    # Render يوفر متغير بيئة اسمه RENDER
     is_render = os.environ.get("RENDER") is not None
     webhook_url = os.environ.get("WEBHOOK_URL")
 
     if is_render and webhook_url:
-        # ═══ وضع Webhook (على Render) ═══
         port = int(os.environ.get("PORT", 8080))
         print(f"🚀 تشغيل البوت في وضع Webhook على المنفذ {port}")
         app.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path="webhook",
-            webhook_url=f"{webhook_url}/webhook",
+            listen="0.0.0.0", port=port,
+            url_path="webhook", webhook_url=f"{webhook_url}/webhook",
             drop_pending_updates=True
         )
     else:
-        # ═══ وضع Polling (على جهازك المحلي) ═══
         print("🤖 تشغيل البوت في وضع Polling (محلي)")
         app.run_polling()
 
