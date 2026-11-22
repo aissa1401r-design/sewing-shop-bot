@@ -288,7 +288,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e2:
                 print(f"⚠️ فشل إرسال رسالة جديدة أيضاً: {e2}")
     
-        elif query.data == "back_home":
+    elif query.data == "back_home":
         # ═══ قراءة الأقسام من products.json ═══
         categories = {}
         try:
@@ -334,7 +334,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
                 reply_markup=reply_markup
             )
-            
+
 async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """بدء المحادثة"""
     print("[DEBUG] دخلنا الى order_start")
