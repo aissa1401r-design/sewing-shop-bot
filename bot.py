@@ -326,7 +326,75 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
             reply_markup=reply_markup
         )
+async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بدء المحادثة"""
+    print("[DEBUG] دخلنا الى order_start")
+    query = update.callback_query
+    await query.answer()
 
+    # 1. هل أتى من رابط ذكي أو من زر الطلب؟
+    selected_product = context.user_data.get('selected_product')
+    
+    if not selected_product and query.data.startswith("order_dyn_"):
+        product_id = int(query.data.replace("order_dyn_", ""))
+        data = load_products()
+        for p in data:
+            if p.get("id") == product_id:
+                selected_product = p["name"]
+                break
+
+    if not selected_product:
+        selected_product = 'منتج غير محدد'
+        
+    context.user_data['selected_product'] = selected_product
+    context.user_data['order'] = {'product': selected_product}
+    
+    # 2. البحث عن المنتج بالـ ID
+    product_obj = None
+    product_id_from_callback = None
+    
+    if query.data.startswith("order_dyn_"):
+        product_id_from_callback = int(query.data.replace("order_dyn_", ""))
+        
+    data = load_products()
+    for p in data:
+        if (product_id_from_callback and p.get("id") == product_id_from_callback) or \
+           (not product_id_from_callback and p.get("name") == selected_product):
+            product_obj = p
+            if not selected_product:
+                selected_product = p["name"]
+            break
+            
+    # 3. تجهيز الأسئلة الديناميكية
+    context.user_data['remaining_attrs'] = []
+    if product_obj:
+        attrs = product_obj.get("attributes", {})
+        for k, v in attrs.items():
+            if isinstance(v, list) and v:
+                context.user_data['remaining_attrs'].append({'key': k, 'options': v})
+    
+    # 4. هل هناك سؤال ديناميكي؟
+    if context.user_data['remaining_attrs']:
+        attr_data = context.user_data['remaining_attrs'].pop(0)
+        context.user_data['current_attr_key'] = attr_data['key']
+        
+        keyboard = []
+        for option in attr_data['options']:
+            keyboard.append([InlineKeyboardButton(option, callback_data=f"attr_{option}")])
+            
+        ARABIC_NAMES = {"colors": "اللون", "sizes": "المقاس", "volume": "السعة"}
+        display_name = ARABIC_NAMES.get(attr_data['key'], attr_data['key'])
+            
+        await query.edit_message_text(
+            f"📝 ممتاز! لنبدأ طلبك لـ <b>{selected_product}</b>.\n\nاختر <b>{display_name}</b>:",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return ASK_DYNAMIC_ATTR
+    else:
+        await query.edit_message_text("📝 ممتاز! لنبدأ طلبك.\n\nما هو <b>اسمك الكامل</b>؟", parse_mode="HTML")
+        return ASK_NAME
+        
 async def get_dynamic_attr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """استقبال اللون أو المقاس المختار"""
     query = update.callback_query
