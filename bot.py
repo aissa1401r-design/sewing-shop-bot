@@ -288,8 +288,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e2:
                 print(f"⚠️ فشل إرسال رسالة جديدة أيضاً: {e2}")
     
-    elif query.data == "back_home":
-        # العودة للقائمة الرئيسية
+        elif query.data == "back_home":
+        # ═══ قراءة الأقسام من products.json ═══
         categories = {}
         try:
             with open("products.json", "r", encoding="utf-8") as f:
@@ -322,10 +322,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
-            "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
-            reply_markup=reply_markup
-        )
+        try:
+            # محاولة تعديل الرسالة الحالية (إذا كانت نصية)
+            await query.edit_message_text(
+                "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
+                reply_markup=reply_markup
+            )
+        except Exception:
+            # إذا كانت الرسالة الحالية صورة، نرسل رسالة جديدة
+            await query.message.reply_text(
+                "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
+                reply_markup=reply_markup
+            )
+            
 async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """بدء المحادثة"""
     print("[DEBUG] دخلنا الى order_start")
