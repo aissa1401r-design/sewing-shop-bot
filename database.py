@@ -40,12 +40,27 @@ def get_orders():
     return response.data
 
 def save_order(order_data):
-    """حفظ طلب جديد في Supabase"""
+    """حفظ طلب جديد في قاعدة البيانات"""
     try:
+        # توليد رقم طلب فريد
+        import datetime
+        order_code = f"ORD-{int(datetime.datetime.now().timestamp())}"
+        
+        # إضافة رقم الطلب إلى البيانات
+        order_data["order_code"] = order_code
+        # إضافة الحالة الافتراضية
+        order_data["status"] = "قيد المراجعة"
+        
+        # الحفظ في Supabase وإرجاع النتيجة
         response = supabase.table("orders").insert(order_data).execute()
-        return response.data
+        
+        # ✅ هذا السطر هو الأهم: إرجاع البيانات المحفوظة
+        if response.data:
+            return response.data
+        return None
+        
     except Exception as e:
-        print(f"⚠️ فشل حفظ الطلب في Supabase: {e}")
+        print(f"⚠️ خطأ في حفظ الطلب: {e}")
         return None
 
 def upload_image_to_supabase(image_bytes, file_name, bucket="products"):
