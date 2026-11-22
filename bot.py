@@ -394,52 +394,23 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ARABIC_NAMES = {"colors": "اللون", "sizes": "المقاس", "volume": "السعة"}
         display_name = ARABIC_NAMES.get(attr_data['key'], attr_data['key'])
             
-        await query.edit_message_text(
-            f"📝 ممتاز! لنبدأ طلبك لـ <b>{selected_product}</b>.\n\nاختر <b>{display_name}</b>:",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        text = f"📝 ممتاز! لنبدأ طلبك لـ <b>{selected_product}</b>.\n\nاختر <b>{display_name}</b>:"
+        
+        # ✅ التحقق من وجود صورة
+        if query.message.photo:
+            await query.edit_message_caption(caption=text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
         return ASK_DYNAMIC_ATTR
     else:
-        await query.edit_message_text("📝 ممتاز! لنبدأ طلبك.\n\nما هو <b>اسمك الكامل</b>؟", parse_mode="HTML")
-        return ASK_NAME
+        text = "📝 ممتاز! لنبدأ طلبك.\n\nما هو <b>اسمك الكامل</b>؟"
         
-async def get_dynamic_attr(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """استقبال اللون أو المقاس المختار"""
-    query = update.callback_query
-    await query.answer()
-    
-    # 1. استخراج القيمة المختارة
-    selected_value = query.data.replace("attr_", "")
-    attr_key = context.user_data.get('current_attr_key')
-    
-    # 2. حفظها في الطلب
-    ARABIC_NAMES = {"colors": "اللون", "sizes": "المقاس", "volume": "السعة"}
-    display_key = ARABIC_NAMES.get(attr_key, attr_key)
-    context.user_data['order'][display_key] = selected_value
-    
-    # 3. هل بقي سؤال آخر؟
-    if context.user_data['remaining_attrs']:
-        attr_data = context.user_data['remaining_attrs'].pop(0)
-        context.user_data['current_attr_key'] = attr_data['key']
-        
-        keyboard = []
-        for option in attr_data['options']:
-            keyboard.append([InlineKeyboardButton(option, callback_data=f"attr_{option}")])
-            
-        display_name = ARABIC_NAMES.get(attr_data['key'], attr_data['key'])
-            
-        await query.edit_message_text(
-            f"اختر <b>{display_name}</b>:",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        return ASK_DYNAMIC_ATTR
-    else:
-        # انتهت الأسئلة، ننتقل لسؤال الاسم
-        await query.edit_message_text("📝 رائع! الآن، ما هو <b>اسمك الكامل</b>؟", parse_mode="HTML")
+        # ✅ التحقق من وجود صورة
+        if query.message.photo:
+            await query.edit_message_caption(caption=text, parse_mode="HTML")
+        else:
+            await query.edit_message_text(text, parse_mode="HTML")
         return ASK_NAME
-
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """استلام الاسم"""
     print("دخلنا الى get_name")
