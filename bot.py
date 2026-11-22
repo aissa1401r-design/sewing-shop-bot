@@ -492,33 +492,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "confirm_yes":
         order = context.user_data.get('order', {})
 
-        # 2. إرسال رسالة التأكيد للزبونة (فوراً)
-        # حفظ الطلب وإرجاع النتيجة
-        saved_order = save_order(order_data)
-        order_code_msg = ""
-        if saved_order and len(saved_order) > 0:
-            order_code = saved_order[0].get('order_code', 'غير متوفر')
-            order_code_msg = f"\n\n📦 <b>رقم طلبك:</b> <code>{order_code}</code>\n(احتفظي به لتتبع طلبك)"
-
-        # إرسال رسالة التأكيد للزبونة
-        await query.edit_message_text(
-            f"✅ تم استلام طلبك بنجاح!\n"
-            f"سنتواصل معك قريباً إن شاء الله للتأكيد النهائي.{order_code_msg}",
-            parse_mode="HTML"
-        )
-
-        # 3. تجهيز رسالة الإشعار للمجموعة
-        admin_message = f"🔔 <b>طلب جديد</b>\n\n"
-        admin_message += f"📦 <b>المنتج: </b>{order.get('product', 'غير محدد')}\n"
-        if 'اللون' in order: admin_message += f"🎨 اللون: {order['اللون']}\n"
-        if 'المقاس' in order: admin_message += f"📏 المقاس: {order['المقاس']}\n"
-        if 'السعة' in order: admin_message += f"🧴 السعة: {order['السعة']}\n"
-        admin_message += f"👤 الاسم: {order.get('name')}\n"
-        admin_message += f"📞 الهاتف: {order.get('phone')}\n"
-        admin_message += f"📍 العنوان: {order.get('address')}\n"
-        admin_message += f"🆔 حساب الزبونة: @{query.from_user.username or 'لا يوجد'}"
-        
-        # ═══ حفظ الطلب في orders.json ═══
+        # 2. تجهيز بيانات الطلب أولاً
         order_data = {
             "product": order.get('product'),
             "color": order.get('اللون', ''),
@@ -529,9 +503,33 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "customer_address": order.get('address'),
             "customer_username": query.from_user.username or "لا يوجد",
         }
-        save_order(order_data)
-        # ═════════════════════════════════
-        # 4. إرسال الإشعار للمجموعة
+        
+        # 3. حفظ الطلب في قاعدة البيانات
+        saved_order = save_order(order_data)
+        order_code_msg = ""
+        if saved_order and len(saved_order) > 0:
+            order_code = saved_order[0].get('order_code', 'غير متوفر')
+            order_code_msg = f"\n\n📦 <b>رقم طلبك:</b> <code>{order_code}</code>\n(احتفظي به لتتبع طلبك)"
+
+        # 4. إرسال رسالة التأكيد للزبونة
+        await query.edit_message_text(
+            f"✅ تم استلام طلبك بنجاح!\n"
+            f"سنتواصل معك قريباً إن شاء الله للتأكيد النهائي.{order_code_msg}",
+            parse_mode="HTML"
+        )
+
+        # 5. تجهيز رسالة الإشعار للمجموعة
+        admin_message = f"🔔 <b>طلب جديد</b>\n\n"
+        admin_message += f"📦 <b>المنتج: </b>{order.get('product', 'غير محدد')}\n"
+        if 'اللون' in order: admin_message += f"🎨 اللون: {order['اللون']}\n"
+        if 'المقاس' in order: admin_message += f"📏 المقاس: {order['المقاس']}\n"
+        if 'السعة' in order: admin_message += f"🧴 السعة: {order['السعة']}\n"
+        admin_message += f"👤 الاسم: {order.get('name')}\n"
+        admin_message += f"📞 الهاتف: {order.get('phone')}\n"
+        admin_message += f"📍 العنوان: {order.get('address')}\n"
+        admin_message += f"🆔 حساب الزبونة: @{query.from_user.username or 'لا يوجد'}"
+        
+        # 6. إرسال الإشعار للمجموعة
         admin_id = os.getenv("ADMIN_CHAT_ID")
         if admin_id:
             try:
@@ -551,7 +549,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text("❌ تم إلغاء الطلب. يمكنك التجول في المتجر.", parse_mode="HTML")
         return ConversationHandler.END
-        
+                
 # أضف هذه الدالة في bot.py (بعد دالة start)
 async def go_back_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """العودة للقائمة الرئيسية أثناء المحادثة"""
