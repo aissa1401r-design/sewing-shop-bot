@@ -219,8 +219,8 @@ async def handle_admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
         await list_products(update, context)
     elif text == "📊 الإحصائيات":
         await stats(update, context)
-    elif text == "📦 الطلبات":
-        await orders_stats(update, context)
+    
+        await list_orders(update, context)
     else:
         await update.message.reply_text("⚠️ الرجاء اختيار زر من القائمة.")
 
@@ -1268,7 +1268,117 @@ async def handle_quick_actions(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return ConversationHandler.END
+async def list_orders(update: Update, context: ContextTypes.DEFAULT_TYPE, page=0):
+    """عرض الطلبات واحداً تلو الآخر مع أزرار التنقل"""
+    if not is_admin(update.effective_user.id):
+        await deny_non_admin(update)
+        return
+
+    from database import get_all_orders
+    orders = get_all_orders()
+    
+    if not orders:
+        await update.message.reply_text("📭 لا توجد طلبات حتى الآن.")
+        return
         
+    # التأكد من أن رقم الصفحة صحيح
+    if page < 0:
+        page = 0
+    elif page >= len(orders):
+        page = len(orders) - 1
+
+    order = orders[page]
+    
+    # جلب البيانات مع التعامل مع الأسماء المختلفة (من بوت الزبونات)
+    order_code = order.get('order_code', 'غير متوفر')
+    product_name = order.get('product_name') or order.get('product', 'غير معروف')
+    customer_name = order.get('customer_name') or order.get('name', 'غير معروف')
+    phone = order.get('customer_phone') or order.get('phone', 'غير معروف')
+    address = order.get('customer_address') or order.get('address', 'غير معروف')
+    status = order.get('status', 'قيد المراجعة')
+    
+    status_emoji = "🕒"
+    if status == "تم الشحن": status_emoji = "🚚"
+    elif status == "مكتمل": status_emoji = "✅"
+    elif status == "ملغي": status_emoji = "❌"
+
+    text = (
+        f"🆔 <b>رقم الطلب:</b> <code>{order_code}</code>\n"
+        f"🛍️ <b>المنتج:</b> {product_name}\n"
+        f"👤 <b>الزبونة:</b> {customer_name}\n"
+        f"📞 <b>الهاتف:</b> {phone}\n"
+        f"📍 <b>العنوان:</b> {address}\n"
+        f"📊 <b>الحالة:</b> {status_emoji} {status}\n\n"
+        f"<i>الطلب {page+1} من {len(orders)}</i>"
+    )
+
+    # أزرار تغيير الحالة
+    status_keyboard = [
+        [
+            InlineKeyboardButton("🚚 تم الشحن", callback_data=f"ord_status_تم الشحن_{order['id']}_{page}"),
+            InlineKeyboardButton("✅ مكتمل", callback_data=f"ord_status_مكتمل_{order['id']}_{page}")
+        ],
+        [
+            InlineKeyboardButton("❌ ملغي", callback_data=f"ord_status_ملغي_{order['id']}_{page}")
+        ]
+    ]
+    
+    # أزرار التنقل بين الطلبات
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ الطلب السابق", callback_data=f"ord_page_{page-1}"))
+    if page < len(orders) - 1:
+        nav_row.append(InlineKeyboardButton("الطلب التالي ➡️", callback_data=f"ord_page_{page+1}"))
+        
+    if nav_row:
+        status_keyboard.append(nav_row)
+
+    reply_markup = InlineKeyboardMarkup(status_keyboard)
+
+    # إذا كنا نعدل رسالة موجودة (عند التنقل)
+    if update.callback_query:
+        query = update.callback_query
+        await query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
+    else:
+        # إذا كانت رسالة جديدة
+        await update.message.reply_text(text, parse_mode="HTML", reply_markup=reply_markup)
+
+async def change_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تغيير حالة الطلب عند الضغط على الزر"""
+    query = update.callback_query
+    await query.answer()
+    
+    if not is_admin(query.from_user.id):
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return
+        
+    # استخراج البيانات: ord_status_{new_status}_{order_id}_{page}
+    parts = query.data.split("_")
+    page = int(parts[-1])
+    order_id = int(parts[-2])
+    new_status = "_".join(parts[2:-2]) 
+    
+    from database import update_order_status
+    updated = update_order_status(order_id, new_status)
+    
+    if updated:
+        # بعد التحديث، نعيد عرض نفس الصفحة
+        await list_orders(update, context, page=page)
+        await query.answer(f"✅ تم التحديث إلى: {new_status}", show_alert=False)
+    else:
+        await query.answer("⚠️ فشل تحديث حالة الطلب.", show_alert=True)
+async def navigate_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 1. التقاط الضغطة
+    query = update.callback_query
+    await query.answer() # إيقاف علامة التحميل على الزر
+    
+    # 2. استخراج رقم الصفحة من callback_data
+    # إذا كان الزر يرسل "ord_page_2"، سيصبح النص "2" ونحوله لرقم صحيح
+    page = int(query.data.replace("ord_page_", ""))
+    
+    # 3. استدعاء دالة عرض الطلبات مع تمرير رقم الصفحة الجديد
+    await list_orders(update, context, page=page)
+
 # ═══ Main ═══
 def main():
     token = load_token()
@@ -1395,13 +1505,15 @@ def main():
 
     # ═══ 5. معالج اختيار الألبوم (معالج واحد فقط) ═══
     app.add_handler(CallbackQueryHandler(handle_album_choice, pattern="^album_"))
+    app.add_handler(CallbackQueryHandler(change_order_status, pattern="^ord_status_"))
+    app.add_handler(CallbackQueryHandler(navigate_orders, pattern="^ord_page_")) # ✅ السطر الجديد
 
     # ═══ 6. الأوامر العادية ═══
     app.add_handler(CommandHandler("start", start_admin))
     app.add_handler(CommandHandler("list", list_products))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("cancel", cancel))
-    app.add_handler(CommandHandler("orders", orders_stats))
+    app.add_handler(CommandHandler("orders", list_orders))
 
     # ═══ 7. الأزرار الثابتة (في النهاية) ═══
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_buttons))

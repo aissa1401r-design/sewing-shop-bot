@@ -109,3 +109,33 @@ def search_products_by_name(search_term):
     except Exception as e:
         print(f"⚠️ خطأ في البحث عن المنتجات: {e}")
         return []
+
+def get_order_by_code(order_code):
+    """جلب طلب برقم التتبع"""
+    try:
+        # نبحث عن الرقم مع تجاهل المسافات وحالة الأحرف
+        response = supabase.table("orders").select("*").eq("order_code", order_code.strip().upper()).execute()
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        print(f"⚠️ خطأ في جلب الطلب: {e}")
+        return None
+
+def get_all_orders():
+    """جلب جميع الطلبات مرتبة من الأحدث"""
+    try:
+        response = supabase.table("orders").select("*").order("created_at", desc=True).execute()
+        return response.data
+    except Exception as e:
+        print(f"⚠️ خطأ في جلب الطلبات: {e}")
+        return []
+
+def update_order_status(order_id, new_status):
+    """تحديث حالة طلب معين"""
+    try:
+        response = supabase.table("orders").update({"status": new_status}).eq("id", order_id).execute()
+        return response.data
+    except Exception as e:
+        print(f"⚠️ خطأ في تحديث حالة الطلب: {e}")
+        return None
