@@ -468,15 +468,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         admin_id = os.getenv("ADMIN_CHAT_ID")
         if admin_id:
             try:
-                # ✅ تجهيز زر الرد
-                reply_keyboard = [[InlineKeyboardButton("↩️ رد على الرسالة", callback_data=f"reply_to_{user.id}")]]
-                
-                await context.bot.send_message(
-                    chat_id=int(admin_id), 
-                    text=admin_message, 
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(reply_keyboard)
-                )
+                await context.bot.send_message(chat_id=int(admin_id), text=admin_message, parse_mode="HTML")
 
                 print("✅ تم إرسال الإشعار للمجموعة بنجاح.")
             except Exception as e:
@@ -637,15 +629,22 @@ async def receive_support_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"📩 <b>رسالة جديدة من زبونة:</b>\n\n"
         f"👤 الاسم: {user.first_name}\n"
         f"🆔 المعرف: @{user.username or 'لا يوجد'}\n"
-        f"💬 الرسالة:\n{message_text}\n\n"
-        f"<i>للرد عليها، اذهبي إلى حسابها: {user.id}</i>"
+        f"💬 الرسالة:\n{message_text}\n"
     )
     
     # إرسال الإدارة
     admin_id = os.getenv("ADMIN_CHAT_ID")
     if admin_id:
         try:
-            await context.bot.send_message(chat_id=int(admin_id), text=admin_message, parse_mode="HTML")
+            # ✅ تجهيز زر الرد هنا (في المكان الصحيح)
+            reply_keyboard = [[InlineKeyboardButton("↩️ رد على الرسالة", callback_data=f"reply_to_{user.id}")]]
+            
+            await context.bot.send_message(
+                chat_id=int(admin_id), 
+                text=admin_message, 
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(reply_keyboard)
+            )
             await update.message.reply_text(
                 "✅ تم إرسال رسالتك بنجاح! سنتواصل معكِ قريباً إن شاء الله.\n"
                 "للعودة للرئيسية أرسلي /start"
@@ -658,7 +657,7 @@ async def receive_support_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("⚠️ عذراً، خدمة التواصل غير متاحة حالياً.")
         
     return ConversationHandler.END
-
+    
 def main():
     token = load_token()
     
