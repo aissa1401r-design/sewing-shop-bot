@@ -23,7 +23,7 @@ SMART_LINKS = {
 }
 
 # ═══ الحالات (States) ═══
-ASK_NAME, ASK_PHONE, ASK_ADDRESS, CONFIRM, ASK_DYNAMIC_ATTR, ASK_TRACK_CODE = range(6)
+ASK_NAME, ASK_PHONE, ASK_ADDRESS, CONFIRM, ASK_DYNAMIC_ATTR, ASK_TRACK_CODE, ASK_SUPPORT_MSG = range(7)
 
 def load_token():
     token = os.getenv("BOT_TOKEN")
@@ -69,12 +69,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
 
     CHANNEL_URL = "https://t.me/+Oxpv5bHOJFBlZmE0"
-    CONTACT_URL = "https://t.me/alfadail_support_bot"
        
     keyboard.append([InlineKeyboardButton("📦 تتبع طلبي", callback_data="track_order")]) # ✅ الزر الجديد
     keyboard.append([
         InlineKeyboardButton("🛍️ زيارة القناة", url=CHANNEL_URL),
-        InlineKeyboardButton("📞 تواصل معنا", url=CONTACT_URL)
+        InlineKeyboardButton("📞 تواصل معنا", callback_data="contact_support")
     ])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -287,9 +286,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
         keyboard.append([InlineKeyboardButton("📦 تتبع طلبي", callback_data="track_order")]) # ✅ الزر الجديد
-        CONTACT_URL = "https://t.me/alfadail_support_bot"
-        keyboard.append([InlineKeyboardButton("📞 تواصل معنا", url=CONTACT_URL)])
-        
+        keyboard.append([InlineKeyboardButton("📞 تواصل معنا", callback_data="contact_support")])        
         reply_markup = InlineKeyboardMarkup(keyboard)
         try:
             await query.edit_message_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
@@ -511,8 +508,7 @@ async def go_back_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
     keyboard.append([InlineKeyboardButton("📦 تتبع طلبي", callback_data="track_order")]) # ✅ الزر الجديد
-    CONTACT_URL = "https://t.me/alfadail_support_bot"
-    keyboard.append([InlineKeyboardButton("📞 تواصل معنا", url=CONTACT_URL)])
+    keyboard.append([InlineKeyboardButton("📞 تواصل معنا", allback_data="contact_support")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -609,6 +605,51 @@ async def track_order_direct(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await query.edit_message_text(text, parse_mode="HTML")
 
+async def start_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بدء محادثة التواصل"""
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text(
+        "📞 <b>تواصل معنا</b>\n\n"
+        "أهلاً بكِ 🌸. يرجى كتابة رسالتك أو استفسارك الآن، وسنقوم بالرد عليكِ في أقرب وقت ممكن.\n"
+        "(أو أرسلي /start للإلغاء)",
+        parse_mode="HTML"
+    )
+    return ASK_SUPPORT_MSG
+
+async def receive_support_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """استقبال الرسالة وإرسالها للإدارة"""
+    message_text = update.message.text
+    user = update.effective_user
+    
+    # تجهيز رسالة الإدارة
+    admin_message = (
+        f"📩 <b>رسالة جديدة من زبونة:</b>\n\n"
+        f"👤 الاسم: {user.first_name}\n"
+        f"🆔 المعرف: @{user.username or 'لا يوجد'}\n"
+        f"💬 الرسالة:\n{message_text}\n\n"
+        f"<i>للرد عليها، اذهبي إلى حسابها: {user.id}</i>"
+    )
+    
+    # إرسال الإدارة
+    admin_id = os.getenv("ADMIN_CHAT_ID")
+    if admin_id:
+        try:
+            await context.bot.send_message(chat_id=int(admin_id), text=admin_message, parse_mode="HTML")
+            await update.message.reply_text(
+                "✅ تم إرسال رسالتك بنجاح! سنتواصل معكِ قريباً إن شاء الله.\n"
+                "للعودة للرئيسية أرسلي /start"
+            )
+        except Exception as e:
+            print(f"⚠️ فشل إرسال رسالة الدعم: {e}")
+            await update.message.reply_text("⚠️ حدث خطأ أثناء إرسال الرسالة. يرجى المحاولة لاحقاً.")
+    else:
+        print("⚠️ تم تجاهل الرسالة: ADMIN_CHAT_ID غير موجود.")
+        await update.message.reply_text("⚠️ عذراً، خدمة التواصل غير متاحة حالياً.")
+        
+    return ConversationHandler.END
+
 def main():
     token = load_token()
     
@@ -633,6 +674,8 @@ def main():
             # ✅ إضافة نقطة بداية للتتبع:
             CallbackQueryHandler(ask_for_track_code, pattern="^track_order$"),
             CallbackQueryHandler(track_order_direct, pattern="^track_order_") # ✅ السطر الجديد 
+            CallbackQueryHandler(start_support, pattern="^contact_support$") # ✅ نقطة بداية الدعم
+
         ],
         states={
             ASK_DYNAMIC_ATTR: [CallbackQueryHandler(get_dynamic_attr, pattern="^attr_.*")],
@@ -641,7 +684,8 @@ def main():
             ASK_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_address)],
             CONFIRM: [CallbackQueryHandler(confirm_order, pattern="^confirm_")],
             # ✅ إضافة حالة استقبال الرقم:
-            ASK_TRACK_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_track_code)], 
+            ASK_TRACK_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_track_code)],
+            ASK_SUPPORT_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_support_msg)] # ✅ حالة الدعم 
         },
         fallbacks=[CommandHandler("start", start)],
         conversation_timeout=300,
