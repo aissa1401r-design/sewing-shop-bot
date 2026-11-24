@@ -218,7 +218,7 @@ async def handle_admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if text == "📦 عرض المنتجات":
         await list_products(update, context)
-        elif text == "📊 الإحصائيات":
+    elif text == "📊 الإحصائيات":
         await stats(update, context)
     elif text == "📦 الطلبات":
         await list_orders(update, context)
