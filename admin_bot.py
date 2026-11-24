@@ -1379,21 +1379,20 @@ async def navigate_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 3. استدعاء دالة عرض الطلبات مع تمرير رقم الصفحة الجديد
     await list_orders(update, context, page=page)
 async def start_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """بدء الرد على رسالة دعم"""
     query = update.callback_query
     await query.answer()
     
-    # استخراج ID الزبونة من الزر (reply_to_123456789)
     customer_id = int(query.data.replace("reply_to_", ""))
     context.user_data['reply_to_id'] = customer_id
     
-    await query.edit_message_text(
+    # ✅ استخدام reply_text بدلاً من edit_message_text
+    await query.message.reply_text(
         f"✍️ يرجى كتابة الرد الذي تريدين إرساله للزبونة (ID: {customer_id}):\n"
         f"(أو أرسلي /cancel للإلغاء)",
         parse_mode="HTML"
     )
     return ASK_REPLY_MSG
-
+    
 async def send_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """إرسال الرد للزبونة"""
     reply_text = update.message.text
