@@ -161,7 +161,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption = f"<b>{p['name']}</b>\n\n"
         caption += f"💰 السعر: {p['price']} دج\n"
         
-        ARABIC_NAMES = {"colors": "🎨 الألوان", "sizes": "📏 المقاسات", "volume": "🧴 السعة"}
+        ARABIC_NAMES = {
+            "colors": "🎨 الألوان", 
+            "sizes": "📏 المقاسات", 
+            "volume": "🧴 السعة",
+            "weight": "⚖️ الوزن",
+            "details": "📝 التفاصيل"
+        }
         for k, v in p.get('attributes', {}).items():
             arabic_name = ARABIC_NAMES.get(k, k)
             if isinstance(v, list):
@@ -216,7 +222,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption = f"<b>{p['name']}</b>\n\n"
         caption += f"💰 السعر: {p['price']} دج\n"
         
-        ARABIC_NAMES = {"colors": "🎨 الألوان", "sizes": "📏 المقاسات", "volume": "🧴 السعة"}
+        ARABIC_NAMES = {
+            "colors": "🎨 الألوان", 
+            "sizes": "📏 المقاسات", 
+            "volume": "🧴 السعة",
+            "weight": "⚖️ الوزن",
+            "details": "📝 التفاصيل"
+        }
         for k, v in p.get('attributes', {}).items():
             arabic_name = ARABIC_NAMES.get(k, k)
             if isinstance(v, list):
