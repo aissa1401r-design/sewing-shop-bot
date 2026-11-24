@@ -26,6 +26,7 @@ EDIT_ID, EDIT_FIELD, EDIT_VALUE = range(10, 13)
 DELETE_ID, DELETE_CONFIRM = range(13, 15)
 ASK_PHOTOS_ID, ASK_MORE_PHOTOS = range(20, 22)
 ASK_SEARCH_QUERY = 7  # ✅ حالة جديدة للبحث
+ASK_REPLY_MSG = 30  # ✅ حالة جديدة للرد على رسائل الدعم
 
 MAX_PHOTOS = 10  # ✅ حد أقصى للصور
 
@@ -1378,6 +1379,43 @@ async def navigate_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # 3. استدعاء دالة عرض الطلبات مع تمرير رقم الصفحة الجديد
     await list_orders(update, context, page=page)
+async def start_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """بدء الرد على رسالة دعم"""
+    query = update.callback_query
+    await query.answer()
+    
+    # استخراج ID الزبونة من الزر (reply_to_123456789)
+    customer_id = int(query.data.replace("reply_to_", ""))
+    context.user_data['reply_to_id'] = customer_id
+    
+    await query.edit_message_text(
+        f"✍️ يرجى كتابة الرد الذي تريدين إرساله للزبونة (ID: {customer_id}):\n"
+        f"(أو أرسلي /cancel للإلغاء)",
+        parse_mode="HTML"
+    )
+    return ASK_REPLY_MSG
+
+async def send_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """إرسال الرد للزبونة"""
+    reply_text = update.message.text
+    customer_id = context.user_data.get('reply_to_id')
+    
+    if not customer_id:
+        await update.message.reply_text("⚠️ حدث خطأ، يرجى إعادة المحاولة.")
+        return ConversationHandler.END
+        
+    try:
+        # إرسال الرد للزبونة
+        await context.bot.send_message(
+            chat_id=customer_id,
+            text=f"📩 <b>رد من إدارة المتجر:</b>\n\n{reply_text}",
+            parse_mode="HTML"
+        )
+        await update.message.reply_text("✅ تم إرسال الرد للزبونة بنجاح!")
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ فشل إرسال الرد: {e}")
+        
+    return ConversationHandler.END
 
 # ═══ Main ═══
 def main():
@@ -1514,6 +1552,19 @@ def main():
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("cancel", cancel))
     app.add_handler(CommandHandler("orders", list_orders))
+    
+    # ═══ 8. محادثة الرد على الدعم ═══
+    reply_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(start_reply, pattern="^reply_to_")
+        ],
+        states={
+            ASK_REPLY_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_reply)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False
+    )
+    app.add_handler(reply_handler)
 
     # ═══ 7. الأزرار الثابتة (في النهاية) ═══
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_buttons))

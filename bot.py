@@ -468,7 +468,16 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         admin_id = os.getenv("ADMIN_CHAT_ID")
         if admin_id:
             try:
-                await context.bot.send_message(chat_id=int(admin_id), text=admin_message, parse_mode="HTML")
+                # ✅ تجهيز زر الرد
+                reply_keyboard = [[InlineKeyboardButton("↩️ رد على الرسالة", callback_data=f"reply_to_{user.id}")]]
+                
+                await context.bot.send_message(
+                    chat_id=int(admin_id), 
+                    text=admin_message, 
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(reply_keyboard)
+                )
+
                 print("✅ تم إرسال الإشعار للمجموعة بنجاح.")
             except Exception as e:
                 print(f"⚠️ فشل إرسال الإشعار: {e}")
