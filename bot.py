@@ -23,7 +23,11 @@ SMART_LINKS = {
 }
 
 # ═══ الحالات (States) ═══
-ASK_NAME, ASK_PHONE, ASK_ADDRESS, CONFIRM, ASK_DYNAMIC_ATTR, ASK_TRACK_CODE, ASK_SUPPORT_MSG = range(7)
+ASK_NAME, ASK_PHONE, ASK_ADDRESS, CONFIRM, ASK_DYNAMIC_ATTR, ASK_TRACK_CODE = range(6)
+
+# ═══ الروابط الثابتة ═══
+CHANNEL_URL = "https://t.me/+Oxpv5bHOJFBlZmE0"
+CONTACT_BOT_URL = "https://t.me/alfadail_support_bot" # رابط بوت الدعم المستقل
 
 def load_token():
     token = os.getenv("BOT_TOKEN")
@@ -36,11 +40,8 @@ def load_token():
                     return line.strip().split("=", 1)[1].strip().strip('"')
     raise ValueError("⚠️ BOT_TOKEN غير موجود في متغيرات البيئة أو .env")
 
-# ═══ أوامر البوت ═══
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """الترحيب الأول"""
-    args = context.args
-    
+def get_main_keyboard():
+    """بناء القائمة الرئيسية الموحدة"""
     categories = {}
     try:
         with open("products.json", "r", encoding="utf-8") as f:
@@ -67,19 +68,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append(row)
     
     keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
-
-    CHANNEL_URL = "https://t.me/+Oxpv5bHOJFBlZmE0"
-       
-    keyboard.append([InlineKeyboardButton("📦 تتبع طلبي", callback_data="track_order")]) # ✅ الزر الجديد
+    keyboard.append([InlineKeyboardButton("📦 تتبع طلبي", callback_data="track_order")])
     keyboard.append([
         InlineKeyboardButton("🛍️ زيارة القناة", url=CHANNEL_URL),
-        InlineKeyboardButton("📞 تواصل معنا", callback_data="contact_support")
+        InlineKeyboardButton("📞 تواصل معنا", url=CONTACT_BOT_URL) # ✅ يفتح بوت الدعم
     ])
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup(keyboard)
+
+# ═══ أوامر البوت ═══
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """الترحيب الأول"""
+    args = context.args
+    
+    reply_markup = get_main_keyboard()
 
     if args:
         arg = args[0]
         product_name = None
+        product_id = None
         
         if arg in SMART_LINKS:
             product_name = SMART_LINKS[arg]
@@ -94,7 +100,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except (ValueError, IndexError):
                 pass
         
-        if product_name:
+        if product_name and product_id:
             context.user_data['selected_product'] = product_name
             smart_keyboard = [
                 [InlineKeyboardButton(f"🛒 اطلب {product_name} الان", callback_data=f"order_dyn_{product_id}")],
@@ -129,6 +135,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data.startswith("order_dyn_"):
         return # نتركها لـ conv_handler
 
+    if query.data == "back_home":
+        reply_markup = get_main_keyboard()
+        try:
+            await query.edit_message_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
+        except Exception:
+            await query.message.reply_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
+        return
+
     if query.data.startswith("cat_") or query.data.startswith("page_"):
         if query.data.startswith("cat_"):
             cat_id = query.data.replace("cat_", "")
@@ -142,12 +156,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         filtered_products = [p for p in products if p.get("category") == cat_id]
         
         ARABIC_CATEGORIES = {
-            "jalabib": "👗 جلابيب",
-            "accessories": "💍 أكسسوارات",
-            "perfumes": "🧴 عطور",
-            "oils": "🌿 زيوت",
-            "home": "🏠 مستلزمات منزلية",
-            "other": "🛍️ آخر"
+            "jalabib": "👗 جلابيب", "accessories": "💍 أكسسوارات",
+            "perfumes": "🧴 عطور", "oils": "🌿 زيوت",
+            "home": "🏠 مستلزمات منزلية", "other": "🛍️ آخر"
         }
         cat_name = ARABIC_CATEGORIES.get(cat_id, cat_id)
 
@@ -161,11 +172,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption += f"💰 السعر: {p['price']} دج\n"
         
         ARABIC_NAMES = {
-            "colors": "🎨 الألوان", 
-            "sizes": "📏 المقاسات", 
-            "volume": "🧴 السعة",
-            "weight": "⚖️ الوزن",
-            "details": "📝 التفاصيل"
+            "colors": "🎨 الألوان", "sizes": "📏 المقاسات", 
+            "volume": "🧴 السعة", "weight": "⚖️ الوزن", "details": "📝 التفاصيل"
         }
         for k, v in p.get('attributes', {}).items():
             arabic_name = ARABIC_NAMES.get(k, k)
@@ -174,9 +182,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption += f"{arabic_name}: {v}\n"
         caption += f"\n<i>{p.get('description', '')}</i>"
 
-        keyboard = [
-            [InlineKeyboardButton("🛒 اطلب الآن", callback_data=f"order_dyn_{p['id']}")],
-        ]
+        keyboard = [[InlineKeyboardButton("🛒 اطلب الآن", callback_data=f"order_dyn_{p['id']}")]]
         
         nav_row = []
         if page > 0:
@@ -222,11 +228,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption += f"💰 السعر: {p['price']} دج\n"
         
         ARABIC_NAMES = {
-            "colors": "🎨 الألوان", 
-            "sizes": "📏 المقاسات", 
-            "volume": "🧴 السعة",
-            "weight": "⚖️ الوزن",
-            "details": "📝 التفاصيل"
+            "colors": "🎨 الألوان", "sizes": "📏 المقاسات", 
+            "volume": "🧴 السعة", "weight": "⚖️ الوزن", "details": "📝 التفاصيل"
         }
         for k, v in p.get('attributes', {}).items():
             arabic_name = ARABIC_NAMES.get(k, k)
@@ -261,73 +264,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await query.message.reply_text(caption, parse_mode="HTML", reply_markup=reply_markup)
             except Exception as e2:
                 print(f"⚠️ فشل إرسال رسالة جديدة: {e2}")
-    
-    elif query.data == "back_home":
-        categories = {}
-        try:
-            with open("products.json", "r", encoding="utf-8") as f:
-                data = json.load(f)
-                categories = data.get("categories", {})
-        except FileNotFoundError:
-            categories = {
-                "jalabib": {"name": "👗 جلابيب"}, "accessories": {"name": "💍 أكسسوارات"},
-                "perfumes": {"name": "🧴 عطور"}, "oils": {"name": "🌿 زيوت"},
-                "home": {"name": "🏠 مستلزمات منزلية"}, "other": {"name": "🛍️ آخر"}
-            }
-
-        keyboard = []
-        row = []
-        for cat_id, cat_info in categories.items():
-            row.append(InlineKeyboardButton(cat_info["name"], callback_data=f"cat_{cat_id}"))
-            if len(row) == 2:
-                keyboard.append(row)
-                row = []
-        if row: keyboard.append(row)
-        
-        keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
-        keyboard.append([InlineKeyboardButton("📦 تتبع طلبي", callback_data="track_order")]) # ✅ الزر الجديد
-        keyboard.append([InlineKeyboardButton("📞 تواصل معنا", callback_data="contact_support")])        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        try:
-            await query.edit_message_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
-        except Exception:
-            await query.message.reply_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
 
 # ═══ استمارة الطلب ═══
 async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("[DEBUG] دخلنا الى order_start")
     query = update.callback_query
     await query.answer()
 
     selected_product = context.user_data.get('selected_product')
-    
-    if not selected_product and query.data.startswith("order_dyn_"):
-        product_id = int(query.data.replace("order_dyn_", ""))
-        data = load_products()
-        for p in data:
-            if p.get("id") == product_id:
-                selected_product = p["name"]
-                break
-
-    if not selected_product:
-        selected_product = 'منتج غير محدد'
-        
-    context.user_data['selected_product'] = selected_product
-    context.user_data['order'] = {'product': selected_product}
-    
-    product_obj = None
     product_id_from_callback = None
     
     if query.data.startswith("order_dyn_"):
         product_id_from_callback = int(query.data.replace("order_dyn_", ""))
         
     data = load_products()
+    product_obj = None
+    
     for p in data:
         if (product_id_from_callback and p.get("id") == product_id_from_callback) or \
            (not product_id_from_callback and p.get("name") == selected_product):
             product_obj = p
-            if not selected_product: selected_product = p["name"]
+            selected_product = p["name"]
             break
+
+    if not selected_product:
+        selected_product = 'منتج غير محدد'
+        
+    context.user_data['selected_product'] = selected_product
+    context.user_data['order'] = {'product': selected_product}
             
     context.user_data['remaining_attrs'] = []
     if product_obj:
@@ -399,7 +362,6 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['order']['address'] = update.message.text
-
     order = context.user_data['order']
     
     summary = f"<b>ملخص طلبك:</b>\n\n"
@@ -427,7 +389,6 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "confirm_yes":
         order = context.user_data.get('order', {})
-
         order_data = {
             "product": order.get('product'),
             "color": order.get('اللون', ''),
@@ -444,8 +405,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if saved_order and len(saved_order) > 0:
             order_code = saved_order[0].get('order_code', 'غير متوفر')
             order_code_msg = f"\n\n📦 <b>رقم طلبك:</b> <code>{order_code}</code>\n(احتفظي به لتتبع طلبك)"
-        # إضافة زر التتبع أسفل رسالة التأكيد
-        # ✅ تمرير رقم الطلب مباشرة داخل الزر
+
         track_keyboard = [[InlineKeyboardButton("📦 تتبع طلبي الآن", callback_data=f"track_order_{order_code}")]]
         
         await query.edit_message_text(
@@ -469,7 +429,6 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if admin_id:
             try:
                 await context.bot.send_message(chat_id=int(admin_id), text=admin_message, parse_mode="HTML")
-
                 print("✅ تم إرسال الإشعار للمجموعة بنجاح.")
             except Exception as e:
                 print(f"⚠️ فشل إرسال الإشعار: {e}")
@@ -482,48 +441,9 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ تم إلغاء الطلب. يمكنك التجول في المتجر.", parse_mode="HTML")
         return ConversationHandler.END
         
-async def go_back_home(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    categories = {}
-    try:
-        with open("products.json", "r", encoding="utf-8") as f:
-            data = json.load(f)
-            categories = data.get("categories", {})
-    except FileNotFoundError:
-        categories = {
-            "jalabib": {"name": "👗 جلابيب"}, "accessories": {"name": "💍 أكسسوارات"},
-            "perfumes": {"name": "🧴 عطور"}, "oils": {"name": "🌿 زيوت"},
-            "home": {"name": "🏠 مستلزمات منزلية"}, "other": {"name": "🛍️ آخر"}
-        }
-
-    keyboard = []
-    row = []
-    for cat_id, cat_info in categories.items():
-        row.append(InlineKeyboardButton(cat_info["name"], callback_data=f"cat_{cat_id}"))
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row: keyboard.append(row)
-    
-    keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
-    keyboard.append([InlineKeyboardButton("📦 تتبع طلبي", callback_data="track_order")]) # ✅ الزر الجديد
-    keyboard.append([InlineKeyboardButton("📞 تواصل معنا", callback_data="contact_support")])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    try:
-        await query.edit_message_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
-    except Exception:
-        await query.message.reply_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
-    return ConversationHandler.END
-
 async def ask_for_track_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """عرض رسالة تطلب رقم الطلب"""
     query = update.callback_query
     await query.answer()
-    
     await query.edit_message_text(
         "📦 يرجى إرسال <b>رقم الطلب</b> الخاص بك (مثال: ORD-171234567):\n"
         "(أو أرسلي /start للإلغاء)",
@@ -532,7 +452,6 @@ async def ask_for_track_code(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return ASK_TRACK_CODE
 
 async def get_track_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """البحث عن الطلب برقم التتبع وإظهار حالته"""
     order_code = update.message.text.strip().upper()
     
     from database import get_order_by_code
@@ -568,11 +487,9 @@ async def get_track_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def track_order_direct(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """تتبع الطلب مباشرة عند الضغط على الزر من رسالة التأكيد"""
     query = update.callback_query
     await query.answer()
     
-    # استخراج رقم الطلب من callback_data (مثلاً track_order_ORD-17955...)
     order_code = query.data.replace("track_order_", "").strip().upper()
     
     from database import get_order_by_code
@@ -606,58 +523,6 @@ async def track_order_direct(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await query.edit_message_text(text, parse_mode="HTML")
 
-async def start_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """بدء محادثة التواصل"""
-    query = update.callback_query
-    await query.answer()
-    
-    await query.edit_message_text(
-        "📞 <b>تواصل معنا</b>\n\n"
-        "أهلاً بكِ 🌸. يرجى كتابة رسالتك أو استفسارك الآن، وسنقوم بالرد عليكِ في أقرب وقت ممكن.\n"
-        "(أو أرسلي /start للإلغاء)",
-        parse_mode="HTML"
-    )
-    return ASK_SUPPORT_MSG
-
-async def receive_support_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """استقبال الرسالة وإرسالها للإدارة"""
-    message_text = update.message.text
-    user = update.effective_user
-    
-    # تجهيز رسالة الإدارة
-    admin_message = (
-        f"📩 <b>رسالة جديدة من زبونة:</b>\n\n"
-        f"👤 الاسم: {user.first_name}\n"
-        f"🆔 المعرف: @{user.username or 'لا يوجد'}\n"
-        f"💬 الرسالة:\n{message_text}\n"
-    )
-    
-    # إرسال الإدارة
-    admin_id = os.getenv("ADMIN_CHAT_ID")
-    if admin_id:
-        try:
-            # ✅ تجهيز زر الرد هنا (في المكان الصحيح)
-            reply_keyboard = [[InlineKeyboardButton("↩️ رد على الرسالة", callback_data=f"reply_to_{user.id}")]]
-            
-            await context.bot.send_message(
-                chat_id=int(admin_id), 
-                text=admin_message, 
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(reply_keyboard)
-            )
-            await update.message.reply_text(
-                "✅ تم إرسال رسالتك بنجاح! سنتواصل معكِ قريباً إن شاء الله.\n"
-                "للعودة للرئيسية أرسلي /start"
-            )
-        except Exception as e:
-            print(f"⚠️ فشل إرسال رسالة الدعم: {e}")
-            await update.message.reply_text("⚠️ حدث خطأ أثناء إرسال الرسالة. يرجى المحاولة لاحقاً.")
-    else:
-        print("⚠️ تم تجاهل الرسالة: ADMIN_CHAT_ID غير موجود.")
-        await update.message.reply_text("⚠️ عذراً، خدمة التواصل غير متاحة حالياً.")
-        
-    return ConversationHandler.END
-   
 def main():
     token = load_token()
     
@@ -679,11 +544,8 @@ def main():
             CallbackQueryHandler(order_start, pattern="^order_start$"),
             CallbackQueryHandler(order_start, pattern="^order_start_red$"),
             CallbackQueryHandler(order_start, pattern="^order_dyn_.*"),
-            # ✅ إضافة نقطة بداية للتتبع:
             CallbackQueryHandler(ask_for_track_code, pattern="^track_order$"),
-            CallbackQueryHandler(track_order_direct, pattern="^track_order_"), # ✅ السطر الجديد 
-            CallbackQueryHandler(start_support, pattern="^contact_support$") # ✅ نقطة بداية الدعم
-
+            CallbackQueryHandler(track_order_direct, pattern="^track_order_")
         ],
         states={
             ASK_DYNAMIC_ATTR: [CallbackQueryHandler(get_dynamic_attr, pattern="^attr_.*")],
@@ -691,9 +553,7 @@ def main():
             ASK_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
             ASK_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_address)],
             CONFIRM: [CallbackQueryHandler(confirm_order, pattern="^confirm_")],
-            # ✅ إضافة حالة استقبال الرقم:
-            ASK_TRACK_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_track_code)],
-            ASK_SUPPORT_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_support_msg)] # ✅ حالة الدعم 
+            ASK_TRACK_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_track_code)]
         },
         fallbacks=[CommandHandler("start", start)],
         conversation_timeout=300,
