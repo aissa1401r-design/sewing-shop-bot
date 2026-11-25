@@ -22,13 +22,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "يمكنك كتابة استفسارك أو شكواك هنا، وسنقوم بالرد عليك في أقرب وقت."
     )
 
-# ═══ استقبال رسالة من الزبونة ═══
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     message_text = update.message.text
     
     try:
-        # حفظ في Supabase
         response = supabase.table("tickets").insert({
             "user_id": user.id,
             "user_name": user.first_name,
@@ -53,7 +51,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"⚠️ حدث خطأ: {e}")
 
-# ═══ استقبال رد صاحبة المتجر ═══
 async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     if not message.reply_to_message or message.reply_to_message.from_user.id != context.bot.id:
@@ -65,8 +62,6 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     try:
         ticket_id = int(original_text.split("تذكرة دعم جديدة #")[1].split()[0])
-        
-        # البحث في Supabase
         response = supabase.table("tickets").select("user_id").eq("id", ticket_id).execute()
         
         if not response.data:
@@ -88,19 +83,35 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
 def main():
     token = load_token()
     request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0)
+    
+    # بناء التطبيق
     app = Application.builder().token(token).request(request).get_updates_request(request).build()
     
+    # إضافة المعالجات
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.GROUPS, handle_admin_reply))
     
+    # ═══ اكتشاف بيئة التشغيل ═══
     is_render = os.environ.get("RENDER") is not None
     webhook_url = os.environ.get("WEBHOOK_URL")
     
     if is_render and webhook_url:
+        # ═══ وضع Webhook (على Render) ═══
         port = int(os.environ.get("PORT", 8080))
-        app.run_webhook(listen="0.0.0.0", port=port, url_path="contact_webhook", webhook_url=f"{webhook_url}/contact_webhook", drop_pending_updates=True)
+        print(f"🚀 بوت الدعم يعمل في وضع Webhook على المنفذ {port}")
+        
+        # ✅ run_webhook سيقوم بتشغيل الخادم تلقائياً (بدون flask)
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path="contact_webhook",
+            webhook_url=f"{webhook_url}/contact_webhook",
+            drop_pending_updates=True
+        )
     else:
+        # ═══ وضع Polling (محلياً) ═══
+        print("🤖 بوت الدعم يعمل في وضع Polling (محلي)")
         app.run_polling()
 
 if __name__ == "__main__":
