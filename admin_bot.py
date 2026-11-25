@@ -12,7 +12,7 @@ import httpx
 import time
 from dotenv import load_dotenv
 from database import load_products, save_product, update_product, delete_product, compress_image, upload_image_to_supabase, get_all_orders, update_order_status, search_products_by_name
-from telegram import InputMediaPhoto, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram import InputMediaPhoto, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, Bot
 from telegram.request import HTTPXRequest
 from telegram.ext import (
     Application, CommandHandler, ContextTypes,
@@ -577,7 +577,6 @@ async def list_orders(update: Update, context: ContextTypes.DEFAULT_TYPE, page=0
     if update.callback_query: await update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
     else: await update.message.reply_text(text, parse_mode="HTML", reply_markup=reply_markup)
 
-
 async def change_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """تغيير حالة الطلب وإشعار الزبونة"""
     query = update.callback_query
@@ -615,9 +614,13 @@ async def change_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE
         # 4. إرسال إشعار للزبونة (إذا كان لدينا معرفها)
         if customer_id:
             try:
-                import telegram
                 # إنشاء بوت مؤقت باستخدام توكن بوت الزبونات
-                customer_bot = telegram.Bot(token=os.getenv("BOT_TOKEN"))
+                customer_token = os.getenv("CUSTOMER_BOT_TOKEN")
+                if not customer_token:
+                    print("⚠️ CUSTOMER_BOT_TOKEN غير موجود في .env، لن يتم إرسال إشعار.")
+                    return
+
+                customer_bot = telegram.Bot(token=customer_token)
                 
                 status_emoji = "🕒"
                 if new_status == "تم الشحن": status_emoji = "🚚"
@@ -625,7 +628,7 @@ async def change_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE
                 elif new_status == "ملغي": status_emoji = "❌"
                 
                 text = (
-                    f"🔔 <b>تحديث على طلبك رقم {order.get('order_code')}:</b>\n\n"
+                    f"🔔 <b>تحديث على طلبك رقم {order.get('order_code', '')}:</b>\n\n"
                     f"📊 الحالة الجديدة: {status_emoji} <b>{new_status}</b>\n\n"
                     f"شكراً لتسوقك من متجرنا 🌸"
                 )
@@ -636,6 +639,17 @@ async def change_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE
                 print(f"⚠️ فشل إرسال إشعار للزبونة: {e}")
     else:
         await query.answer("⚠️ فشل تحديث حالة الطلب.", show_alert=True)
+async def navigate_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """التنقل بين صفحات الطلبات"""
+    query = update.callback_query
+    await query.answer() # إيقاف علامة التحميل على الزر
+    
+    # استخراج رقم الصفحة من callback_data
+    # إذا كان الزر يرسل "ord_page_2"، سيصبح النص "2" ونحوله لرقم صحيح
+    page = int(query.data.replace("ord_page_", ""))
+    
+    # استدعاء دالة عرض الطلبات مع تمرير رقم الصفحة الجديد
+    await list_orders(update, context, page=page)
 
 # ═══ إضافة صور ═══
 async def add_photos_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
