@@ -579,22 +579,63 @@ async def list_orders(update: Update, context: ContextTypes.DEFAULT_TYPE, page=0
 
 
 async def change_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """تغيير حالة الطلب وإشعار الزبونة"""
     query = update.callback_query
     await query.answer()
-    if not is_admin(query.from_user.id): return
+    
+    if not is_admin(query.from_user.id):
+        await query.answer("⛔ ليس لديك صلاحية.", show_alert=True)
+        return
+        
+    # استخراج البيانات: ord_status_{new_status}_{order_id}_{page}
     parts = query.data.split("_")
-    page, order_id, new_status = int(parts[-1]), int(parts[-2]), "_".join(parts[2:-2])
-    if update_order_status(order_id, new_status):
+    page = int(parts[-1])
+    order_id = int(parts[-2])
+    new_status = "_".join(parts[2:-2]) 
+    
+    # 1. جلب بيانات الطلب (قبل التحديث) لمعرفة customer_id
+    from database import get_all_orders, update_order_status
+    orders = get_all_orders()
+    order = next((o for o in orders if o['id'] == order_id), None)
+    
+    if not order:
+        await query.answer("⚠️ لم يتم العثور على الطلب.", show_alert=True)
+        return
+        
+    customer_id = order.get('customer_id') # معرف الزبونة في تيليجرام
+    
+    # 2. تحديث الحالة في قاعدة البيانات
+    updated = update_order_status(order_id, new_status)
+    
+    if updated:
+        # 3. إعادة عرض الصفحة
         await list_orders(update, context, page=page)
+        await query.answer(f"✅ تم التحديث إلى: {new_status}", show_alert=False)
+        
+        # 4. إرسال إشعار للزبونة (إذا كان لدينا معرفها)
+        if customer_id:
+            try:
+                import telegram
+                # إنشاء بوت مؤقت باستخدام توكن بوت الزبونات
+                customer_bot = telegram.Bot(token=os.getenv("BOT_TOKEN"))
+                
+                status_emoji = "🕒"
+                if new_status == "تم الشحن": status_emoji = "🚚"
+                elif new_status == "مكتمل": status_emoji = "✅"
+                elif new_status == "ملغي": status_emoji = "❌"
+                
+                text = (
+                    f"🔔 <b>تحديث على طلبك رقم {order.get('order_code')}:</b>\n\n"
+                    f"📊 الحالة الجديدة: {status_emoji} <b>{new_status}</b>\n\n"
+                    f"شكراً لتسوقك من متجرنا 🌸"
+                )
+                
+                await customer_bot.send_message(chat_id=customer_id, text=text, parse_mode="HTML")
+                print(f"✅ تم إرسال إشعار للزبونة {customer_id} بنجاح.")
+            except Exception as e:
+                print(f"⚠️ فشل إرسال إشعار للزبونة: {e}")
     else:
-        await query.answer("⚠️ فشل التحديث.", show_alert=True)
-
-
-async def navigate_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await list_orders(update, context, page=int(query.data.replace("ord_page_", "")))
-
+        await query.answer("⚠️ فشل تحديث حالة الطلب.", show_alert=True)
 
 # ═══ إضافة صور ═══
 async def add_photos_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
