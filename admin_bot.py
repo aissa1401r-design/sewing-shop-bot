@@ -615,9 +615,9 @@ async def change_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE
         if customer_id:
             try:
                 # إنشاء بوت مؤقت باستخدام توكن بوت الزبونات
-                customer_token = os.getenv("CUSTOMER_BOT_TOKEN")
+                customer_token = os.getenv("BOT_TOKEN")
                 if not customer_token:
-                    print("⚠️ CUSTOMER_BOT_TOKEN غير موجود في .env، لن يتم إرسال إشعار.")
+                    print("⚠️ BOT_TOKEN غير موجود في .env، لن يتم إرسال إشعار.")
                     return
 
                 customer_bot = telegram.Bot(token=customer_token)
@@ -639,6 +639,7 @@ async def change_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE
                 print(f"⚠️ فشل إرسال إشعار للزبونة: {e}")
     else:
         await query.answer("⚠️ فشل تحديث حالة الطلب.", show_alert=True)
+
 async def navigate_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """التنقل بين صفحات الطلبات"""
     query = update.callback_query
