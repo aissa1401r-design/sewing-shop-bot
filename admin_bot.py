@@ -12,6 +12,7 @@ import httpx
 import time
 from dotenv import load_dotenv
 from database import load_products, save_product, update_product, delete_product, compress_image, upload_image_to_supabase, get_all_orders, update_order_status, search_products_by_name
+import telegram
 from telegram import InputMediaPhoto, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, Bot
 from telegram.request import HTTPXRequest
 from telegram.ext import (
@@ -617,19 +618,25 @@ async def change_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE
                 # إنشاء بوت مؤقت باستخدام توكن بوت الزبونات
                 customer_token = os.getenv("BOT_TOKEN")
                 if not customer_token:
-                    print("⚠️ BOT_TOKEN غير موجود في .env، لن يتم إرسال إشعار.")
+                    print("⚠️ BOT_TOKEN غير موجود! تأكد من إضافته في .env أو Render.")
                     return
-
-                customer_bot = telegram.Bot(token=customer_token)
+                
+                # ✅ زيادة وقت الانتظار لتجنب خطأ Timed out
+                from telegram.request import HTTPXRequest
+                custom_request = HTTPXRequest(connect_timeout=60.0, read_timeout=60.0)
+                customer_bot = telegram.Bot(token=customer_token, request=custom_request)
                 
                 status_emoji = "🕒"
                 if new_status == "تم الشحن": status_emoji = "🚚"
                 elif new_status == "مكتمل": status_emoji = "✅"
                 elif new_status == "ملغي": status_emoji = "❌"
                 
+                product_name = order.get('product_name') or order.get('product', 'غير معروف')
+                
                 text = (
                     f"🔔 <b>تحديث على طلبك رقم {order.get('order_code', '')}:</b>\n\n"
-                    f"📊 الحالة الجديدة: {status_emoji} <b>{new_status}</b>\n\n"
+                    f"📦 <b>المنتج:</b> {product_name}\n"
+                    f"📊 <b>الحالة الجديدة:</b> {status_emoji} <b>{new_status}</b>\n\n"
                     f"شكراً لتسوقك من متجرنا 🌸"
                 )
                 
