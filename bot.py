@@ -80,6 +80,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """الترحيب الأول"""
     args = context.args
     
+    # ✅ تعريف اسم الزبونة في البداية (قبل أي استخدام)
+    user_name = update.effective_user.first_name
+    if not user_name:
+        user_name = "عزيزتي"
+
     reply_markup = get_main_keyboard()
 
     if args:
@@ -109,21 +114,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             smart_markup = InlineKeyboardMarkup(smart_keyboard)
 
             await update.message.reply_text(
-                f"أهلا بك 🌸\n"
+                f"أهلاً بكِ {user_name} 🌸\n"
                 f"لاحظت إعجابك ب <b>{product_name}</b>\n"
-                f"هل تودين طلبه الان, أم تصفح المتجر؟",
+                f"هل تودين طلبه الآن, أم تصفح المتجر؟",
                 parse_mode="HTML",
                 reply_markup=smart_markup
             )
             return
 
+    # الرسالة الترحيبية الأساسية
     await update.message.reply_text(
-        "أهلاً بك في متجر الخياطة اليدوية 🌸\n\n"
-        "نحن نقدم لكم أفضل المنتجات.\n"
-        "اختر ما يهمك:",
+        f"أهلاً بكِ {user_name} في متجر الخياطة اليدوية 🌸\n\n"
+        "نحن نقدم لكِ أفضل المنتجات.\n"
+        "اختر ما يهمكِ:",
         reply_markup=reply_markup
     )
-
+    
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة النقرات"""
     query = update.callback_query
@@ -406,7 +412,11 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             order_code = saved_order[0].get('order_code', 'غير متوفر')
             order_code_msg = f"\n\n📦 <b>رقم طلبك:</b> <code>{order_code}</code>\n(احتفظي به لتتبع طلبك)"
 
-        track_keyboard = [[InlineKeyboardButton("📦 تتبع طلبي الآن", callback_data=f"track_order_{order_code}")]]
+        # ✅ إضافة زر تتبع الطلب وزر العودة للرئيسية
+        track_keyboard = [
+            [InlineKeyboardButton("📦 تتبع طلبي الآن", callback_data=f"track_order_{order_code}")],
+            [InlineKeyboardButton("🏠 العودة للرئيسية", callback_data="back_home")]
+        ]
         
         await query.edit_message_text(
             f"✅ تم استلام طلبك بنجاح!\n"
@@ -414,7 +424,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(track_keyboard)
         )
-        
+                
         admin_message = f"🔔 <b>طلب جديد</b>\n\n"
         admin_message += f"📦 <b>المنتج: </b>{order.get('product', 'غير محدد')}\n"
         if 'اللون' in order: admin_message += f"🎨 اللون: {order['اللون']}\n"
