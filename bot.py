@@ -424,6 +424,7 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "customer_phone": order.get('phone'),
             "customer_address": order.get('address'),
             "customer_username": query.from_user.username or "لا يوجد",
+            "customer_id": query.from_user.id,  # ✅ أضف هذا السطر
         }
         
         saved_order = save_order(order_data)
