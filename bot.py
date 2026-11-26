@@ -129,7 +129,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "اختر ما يهمكِ:",
         reply_markup=reply_markup
     )
-    
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالجة النقرات"""
     query = update.callback_query
@@ -144,9 +144,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data == "back_home":
         reply_markup = get_main_keyboard()
         try:
-            await query.edit_message_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
-        except Exception:
-            await query.message.reply_text("أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:", reply_markup=reply_markup)
+            # ✅ إرسال رسالة جديدة بدلاً من تعديل الرسالة الحالية
+            await query.message.reply_text(
+                "أهلاً بك في متجر الخياطة العصرية 🌸\n\nاختر ما يهمك:",
+                reply_markup=reply_markup
+            )
+            # اختياري: حذف أزرار الرسالة القديمة (الفاتورة) لكي لا يضغط عليها المستخدم مرة أخرى
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"⚠️ فشل إرسال القائمة: {e}")
         return
 
     if query.data.startswith("cat_") or query.data.startswith("page_"):
@@ -395,6 +404,17 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "confirm_yes":
         order = context.user_data.get('order', {})
+        
+        # جلب السعر من المنتج (إذا كان متاحاً)
+        product_price = "غير محدد"
+        try:
+            products = load_products()
+            p = next((item for item in products if item["name"] == order.get('product')), None)
+            if p:
+                product_price = f"{p['price']} دج"
+        except:
+            pass
+
         order_data = {
             "product": order.get('product'),
             "color": order.get('اللون', ''),
@@ -407,25 +427,39 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         
         saved_order = save_order(order_data)
-        order_code_msg = ""
+        order_code = "غير متوفر"
         if saved_order and len(saved_order) > 0:
             order_code = saved_order[0].get('order_code', 'غير متوفر')
-            order_code_msg = f"\n\n📦 <b>رقم طلبك:</b> <code>{order_code}</code>\n(احتفظي به لتتبع طلبك)"
 
-        # ✅ إضافة زر تتبع الطلب وزر العودة للرئيسية
+        # ═══ بناء رسالة الفاتورة الشاملة ═══
+        receipt = f"✅ <b>تم استلام طلبك بنجاح!</b>\n"
+        receipt += f"سنتواصل معك قريباً إن شاء الله للتأكيد النهائي.\n\n"
+        receipt += f"📦 <b>المنتج:</b> {order.get('product', 'غير محدد')}\n"
+        receipt += f"💰 <b>السعر:</b> {product_price}\n"
+        if 'اللون' in order: receipt += f"🎨 <b>اللون:</b> {order['اللون']}\n"
+        if 'المقاس' in order: receipt += f"📏 <b>المقاس:</b> {order['المقاس']}\n"
+        if 'السعة' in order: receipt += f"🧴 <b>السعة:</b> {order['السعة']}\n"
+        receipt += f"👤 <b>الاسم:</b> {order.get('name')}\n"
+        receipt += f"📞 <b>الهاتف:</b> {order.get('phone')}\n"
+        receipt += f"📍 <b>العنوان:</b> {order.get('address')}\n\n"
+        receipt += f"🆔 <b>رقم طلبك:</b> <code>{order_code}</code>\n"
+        receipt += f"<i>(احتفظي بهذا الرقم لتتبع طلبك)</i>"
+
+        # أزرار التتبع والعودة
         track_keyboard = [
             [InlineKeyboardButton("📦 تتبع طلبي الآن", callback_data=f"track_order_{order_code}")],
             [InlineKeyboardButton("🏠 العودة للرئيسية", callback_data="back_home")]
         ]
         
         await query.edit_message_text(
-            f"✅ تم استلام طلبك بنجاح!\n"
-            f"سنتواصل معك قريباً إن شاء الله للتأكيد النهائي.{order_code_msg}",
+            receipt,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(track_keyboard)
         )
                 
+        # ═══ إرسال الإشعار للإدارة ═══
         admin_message = f"🔔 <b>طلب جديد</b>\n\n"
+        admin_message += f"🆔 <b>رقم الطلب:</b> <code>{order_code}</code>\n"
         admin_message += f"📦 <b>المنتج: </b>{order.get('product', 'غير محدد')}\n"
         if 'اللون' in order: admin_message += f"🎨 اللون: {order['اللون']}\n"
         if 'المقاس' in order: admin_message += f"📏 المقاس: {order['المقاس']}\n"
@@ -442,15 +476,13 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 print("✅ تم إرسال الإشعار للمجموعة بنجاح.")
             except Exception as e:
                 print(f"⚠️ فشل إرسال الإشعار: {e}")
-        else:
-            print("⚠️ تم تجاهل الإشعار: ADMIN_CHAT_ID غير موجود.")
 
         return ConversationHandler.END
 
     else:
         await query.edit_message_text("❌ تم إلغاء الطلب. يمكنك التجول في المتجر.", parse_mode="HTML")
         return ConversationHandler.END
-        
+
 async def ask_for_track_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
