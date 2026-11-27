@@ -297,6 +297,10 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not cart:
             await query.answer("سلتك فارغة!", show_alert=True)
             return
+        
+        # ✅ إصلاح: إنشاء قاموس order الأساسي
+        context.user_data['order'] = {'product': 'طلب من السلة'}
+        
         total = sum(item['price'] * item['quantity'] for item in cart)
         context.user_data['checkout_total'] = total
         await query.edit_message_text(
