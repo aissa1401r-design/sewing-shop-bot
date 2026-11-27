@@ -139,3 +139,50 @@ def update_order_status(order_id, new_status):
     except Exception as e:
         print(f"⚠️ خطأ في تحديث حالة الطلب: {e}")
         return None
+
+def save_order_with_items(customer_info, cart_items, total_price):
+    """حفظ طلب جديد مع عناصر السلة"""
+    try:
+        # 1. حفظ رأس الطلب (بيانات الزبونة والإجمالي)
+        order_data = {
+            "customer_id": customer_info["id"],
+            "customer_name": customer_info["name"],
+            "customer_phone": customer_info["phone"],
+            "customer_address": customer_info["address"],
+            "customer_username": customer_info.get("username", "لا يوجد"),
+            "total_price": total_price,
+            "status": "قيد المراجعة"
+        }
+        
+        # توليد رقم طلب فريد
+        import datetime
+        order_code = f"ORD-{int(datetime.datetime.now().timestamp())}"
+        order_data["order_code"] = order_code
+        
+        # حفظ الطلب
+        order_response = supabase.table("orders").insert(order_data).execute()
+        if not order_response.data:
+            return None
+            
+        order_id = order_response.data[0]['id']
+        
+        # 2. حفظ عناصر السلة
+        items_to_insert = []
+        for item in cart_items:
+            items_to_insert.append({
+                "order_id": order_id,
+                "product_id": item.get("id"),
+                "product_name": item.get("name"),
+                "price": item.get("price"),
+                "color": item.get("اللون", ""),
+                "size": item.get("المقاس", ""),
+                "volume": item.get("السعة", "")
+            })
+            
+        supabase.table("order_items").insert(items_to_insert).execute()
+        
+        return order_response.data # نرجع بيانات الطلب (لأخذ order_code)
+        
+    except Exception as e:
+        print(f"⚠️ خطأ في حفظ الطلب مع السلة: {e}")
+        return None

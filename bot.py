@@ -68,6 +68,7 @@ def get_main_keyboard():
         keyboard.append(row)
     
     keyboard.append([InlineKeyboardButton("✨ عرض كل المنتجات", callback_data="all_products_0")])
+    keyboard.append([InlineKeyboardButton("🛒 سلة المشتريات", callback_data="view_cart")]) # ✅ زر السلة
     keyboard.append([InlineKeyboardButton("📦 تتبع طلبي", callback_data="track_order")])
     keyboard.append([
         InlineKeyboardButton("🛍️ زيارة القناة", url=CHANNEL_URL),
@@ -196,8 +197,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 v = "، ".join([str(item).strip() for item in v])
             caption += f"{arabic_name}: {v}\n"
         caption += f"\n<i>{p.get('description', '')}</i>"
-
-        keyboard = [[InlineKeyboardButton("🛒 اطلب الآن", callback_data=f"order_dyn_{p['id']}")]]
+        
+        keyboard = [
+            [InlineKeyboardButton("🛒 اطلب الآن", callback_data=f"order_dyn_{p['id']}")],
+            [InlineKeyboardButton("➕ أضيفي للسلة", callback_data=f"add_to_cart_{p['id']}")] # ✅ زر الإضافة للسلة
+        ]
         
         nav_row = []
         if page > 0:
@@ -252,8 +256,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 v = "، ".join([str(item).strip() for item in v])
             caption += f"{arabic_name}: {v}\n"
         caption += f"\n<i>{p.get('description', '')}</i>"
-
-        keyboard = [[InlineKeyboardButton("🛒 اطلب الآن", callback_data=f"order_dyn_{p['id']}")]]
+        
+        keyboard = [
+            [InlineKeyboardButton("🛒 اطلب الآن", callback_data=f"order_dyn_{p['id']}")],
+            [InlineKeyboardButton("➕ أضيفي للسلة", callback_data=f"add_to_cart_{p['id']}")] # ✅ زر الإضافة للسلة
+        ]
         
         nav_row = []
         if page > 0: nav_row.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"all_products_{page-1}"))
@@ -338,7 +345,25 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_text(text, parse_mode="HTML")
         return ASK_NAME
-
+        
+    # إذا كان الطلب قادماً من السلة (checkout_cart)
+    if query.data == "checkout_cart":
+        cart = context.user_data.get('cart', [])
+        if not cart:
+            await query.answer("سلتك فارغة!", show_alert=True)
+            return
+            
+        # حساب الإجمالي
+        total = sum(item['price'] * item['quantity'] for item in cart)
+        context.user_data['checkout_total'] = total
+        
+        await query.edit_message_text(
+            f"📝 ممتاز! لنبدأ طلبك.\n\n"
+            f"💰 <b>الإجمالي: {total} دج</b>\n\n"
+            f"ما هو <b>اسمك الكامل</b>؟", 
+            parse_mode="HTML"
+        )
+        return ASK_NAME
 async def get_dynamic_attr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -404,77 +429,112 @@ async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "confirm_yes":
         order = context.user_data.get('order', {})
+        cart = context.user_data.get('cart', [])
         
-        # جلب السعر من المنتج (إذا كان متاحاً)
-        product_price = "غير محدد"
-        try:
-            products = load_products()
-            p = next((item for item in products if item["name"] == order.get('product')), None)
-            if p:
-                product_price = f"{p['price']} دج"
-        except:
-            pass
+        # ═══ الحالة 1: الطلب من السلة ═══
+        if cart:
+            customer_info = {
+                "id": query.from_user.id,
+                "name": order.get('name'),
+                "phone": order.get('phone'),
+                "address": order.get('address'),
+                "username": query.from_user.username or "لا يوجد"
+            }
+            total = context.user_data.get('checkout_total', 0)
+            
+            # استدعاء دالة الحفظ الخاصة بالسلة
+            from database import save_order_with_items
+            saved_order = save_order_with_items(customer_info, cart, total)
+            
+            order_code = "غير متوفر"
+            if saved_order and len(saved_order) > 0:
+                order_code = saved_order[0].get('order_code', 'غير متوفر')
+                
+            receipt = f"✅ <b>تم استلام طلبك بنجاح!</b>\n"
+            receipt += f"📦 <b>عدد المنتجات:</b> {len(cart)}\n"
+            receipt += f"💰 <b>الإجمالي:</b> {total} دج\n\n"
+            receipt += f"👤 <b>الاسم:</b> {order.get('name')}\n"
+            receipt += f"📞 <b>الهاتف:</b> {order.get('phone')}\n"
+            receipt += f"📍 <b>العنوان:</b> {order.get('address')}\n\n"
+            receipt += f"🆔 <b>رقم طلبك:</b> <code>{order_code}</code>"
+            
+            # إرسال الإشعار للإدارة
+            admin_message = f"🔔 <b>طلب جديد (سلة)</b>\n\n"
+            admin_message += f"🆔 <b>رقم الطلب:</b> <code>{order_code}</code>\n"
+            admin_message += f"📦 <b>المنتجات:</b>\n"
+            for item in cart:
+                admin_message += f"  - {item['name']} (x{item['quantity']})\n"
+            admin_message += f"💰 <b>الإجمالي:</b> {total} دج\n"
+            admin_message += f"👤 الاسم: {order.get('name')}\n"
+            admin_message += f"📞 الهاتف: {order.get('phone')}\n"
+            admin_message += f"📍 العنوان: {order.get('address')}\n"
+            admin_message += f"🆔 حساب الزبونة: @{query.from_user.username or 'لا يوجد'}"
+            
+            # مسح السلة بعد الطلب
+            context.user_data['cart'] = []
 
-        order_data = {
-            "product": order.get('product'),
-            "color": order.get('اللون', ''),
-            "size": order.get('المقاس', ''),
-            "volume": order.get('السعة', ''),
-            "customer_name": order.get('name'),
-            "customer_phone": order.get('phone'),
-            "customer_address": order.get('address'),
-            "customer_username": query.from_user.username or "لا يوجد",
-            "customer_id": query.from_user.id,  # ✅ أضف هذا السطر
-        }
-        
-        saved_order = save_order(order_data)
-        order_code = "غير متوفر"
-        if saved_order and len(saved_order) > 0:
-            order_code = saved_order[0].get('order_code', 'غير متوفر')
+        # ═══ الحالة 2: الطلب المباشر (منتج واحد) ═══
+        else:
+            product_price = "غير محدد"
+            try:
+                products = load_products()
+                p = next((item for item in products if item["name"] == order.get('product')), None)
+                if p: product_price = f"{p['price']} دج"
+            except: pass
 
-        # ═══ بناء رسالة الفاتورة الشاملة ═══
-        receipt = f"✅ <b>تم استلام طلبك بنجاح!</b>\n"
-        receipt += f"سنتواصل معك قريباً إن شاء الله للتأكيد النهائي.\n\n"
-        receipt += f"📦 <b>المنتج:</b> {order.get('product', 'غير محدد')}\n"
-        receipt += f"💰 <b>السعر:</b> {product_price}\n"
-        if 'اللون' in order: receipt += f"🎨 <b>اللون:</b> {order['اللون']}\n"
-        if 'المقاس' in order: receipt += f"📏 <b>المقاس:</b> {order['المقاس']}\n"
-        if 'السعة' in order: receipt += f"🧴 <b>السعة:</b> {order['السعة']}\n"
-        receipt += f"👤 <b>الاسم:</b> {order.get('name')}\n"
-        receipt += f"📞 <b>الهاتف:</b> {order.get('phone')}\n"
-        receipt += f"📍 <b>العنوان:</b> {order.get('address')}\n\n"
-        receipt += f"🆔 <b>رقم طلبك:</b> <code>{order_code}</code>\n"
-        receipt += f"<i>(احتفظي بهذا الرقم لتتبع طلبك)</i>"
+            order_data = {
+                "product": order.get('product'),
+                "color": order.get('اللون', ''),
+                "size": order.get('المقاس', ''),
+                "volume": order.get('السعة', ''),
+                "customer_name": order.get('name'),
+                "customer_phone": order.get('phone'),
+                "customer_address": order.get('address'),
+                "customer_username": query.from_user.username or "لا يوجد",
+                "customer_id": query.from_user.id,
+            }
+            
+            saved_order = save_order(order_data)
+            order_code = "غير متوفر"
+            if saved_order and len(saved_order) > 0:
+                order_code = saved_order[0].get('order_code', 'غير متوفر')
 
-        # أزرار التتبع والعودة
+            receipt = f"✅ <b>تم استلام طلبك بنجاح!</b>\n"
+            receipt += f"📦 <b>المنتج:</b> {order.get('product', 'غير محدد')}\n"
+            receipt += f"💰 <b>السعر:</b> {product_price}\n"
+            if 'اللون' in order: receipt += f"🎨 <b>اللون:</b> {order['اللون']}\n"
+            if 'المقاس' in order: receipt += f"📏 <b>المقاس:</b> {order['المقاس']}\n"
+            receipt += f"👤 <b>الاسم:</b> {order.get('name')}\n"
+            receipt += f"📞 <b>الهاتف:</b> {order.get('phone')}\n"
+            receipt += f"📍 <b>العنوان:</b> {order.get('address')}\n\n"
+            receipt += f"🆔 <b>رقم طلبك:</b> <code>{order_code}</code>"
+
+            # إرسال الإشعار للإدارة
+            admin_message = f"🔔 <b>طلب جديد (مباشر)</b>\n\n"
+            admin_message += f"🆔 <b>رقم الطلب:</b> <code>{order_code}</code>\n"
+            admin_message += f"📦 <b>المنتج:</b> {order.get('product')}\n"
+            admin_message += f"👤 الاسم: {order.get('name')}\n"
+            admin_message += f"📞 الهاتف: {order.get('phone')}\n"
+            admin_message += f"📍 العنوان: {order.get('address')}\n"
+            admin_message += f"🆔 حساب الزبونة: @{query.from_user.username or 'لا يوجد'}"
+
+        # ═══ إرسال الفاتورة للزبونة ═══
         track_keyboard = [
             [InlineKeyboardButton("📦 تتبع طلبي الآن", callback_data=f"track_order_{order_code}")],
             [InlineKeyboardButton("🏠 العودة للرئيسية", callback_data="back_home")]
         ]
         
         await query.edit_message_text(
-            receipt,
+            receipt + f"\n\n<i>(احتفظي بهذا الرقم لتتبع طلبك)</i>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(track_keyboard)
         )
                 
-        # ═══ إرسال الإشعار للإدارة ═══
-        admin_message = f"🔔 <b>طلب جديد</b>\n\n"
-        admin_message += f"🆔 <b>رقم الطلب:</b> <code>{order_code}</code>\n"
-        admin_message += f"📦 <b>المنتج: </b>{order.get('product', 'غير محدد')}\n"
-        if 'اللون' in order: admin_message += f"🎨 اللون: {order['اللون']}\n"
-        if 'المقاس' in order: admin_message += f"📏 المقاس: {order['المقاس']}\n"
-        if 'السعة' in order: admin_message += f"🧴 السعة: {order['السعة']}\n"
-        admin_message += f"👤 الاسم: {order.get('name')}\n"
-        admin_message += f"📞 الهاتف: {order.get('phone')}\n"
-        admin_message += f"📍 العنوان: {order.get('address')}\n"
-        admin_message += f"🆔 حساب الزبونة: @{query.from_user.username or 'لا يوجد'}"
-        
+        # ═══ إرسال الإشعار للمجموعة ═══
         admin_id = os.getenv("ADMIN_CHAT_ID")
         if admin_id:
             try:
                 await context.bot.send_message(chat_id=int(admin_id), text=admin_message, parse_mode="HTML")
-                print("✅ تم إرسال الإشعار للمجموعة بنجاح.")
             except Exception as e:
                 print(f"⚠️ فشل إرسال الإشعار: {e}")
 
@@ -566,6 +626,74 @@ async def track_order_direct(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await query.edit_message_text(text, parse_mode="HTML")
 
+# ═══ إدارة السلة ═══
+async def add_to_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("✅ تمت الإضافة للسلة!")
+    
+    product_id = int(query.data.replace("add_to_cart_", ""))
+    products = load_products()
+    product = next((p for p in products if p["id"] == product_id), None)
+    
+    if not product:
+        await query.message.reply_text("⚠️ لم يتم العثور على المنتج.")
+        return
+        
+    if 'cart' not in context.user_data:
+        context.user_data['cart'] = []
+        
+    # إضافة المنتج (أو زيادة الكمية إذا كان موجوداً)
+    existing_item = next((item for item in context.user_data['cart'] if item['id'] == product_id), None)
+    if existing_item:
+        existing_item['quantity'] += 1
+    else:
+        context.user_data['cart'].append({
+            "id": product['id'],
+            "name": product['name'],
+            "price": product['price'],
+            "quantity": 1
+        })
+        
+    # (اختياري) إرسال رسالة تأكيد سريعة
+    await query.message.reply_text(f"✅ تمت إضافة <b>{product['name']}</b> إلى السلة.", parse_mode="HTML")
+
+async def view_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    cart = context.user_data.get('cart', [])
+    if not cart:
+        await query.edit_message_text("🛒 سلتك فارغة حالياً. تصفحي المنتجات وأضيفي ما يعجبك!")
+        return
+        
+    text = "🛒 <b>سلة مشترياتك:</b>\n\n"
+    total = 0
+    keyboard = []
+    
+    for item in cart:
+        item_total = item['price'] * item['quantity']
+        total += item_total
+        text += f"▪️ {item['name']} (x{item['quantity']}) - {item_total} دج\n"
+        # زر لحذف المنتج
+        keyboard.append([InlineKeyboardButton(f"❌ حذف {item['name']}", callback_data=f"remove_from_cart_{item['id']}")])
+        
+    text += f"\n💰 <b>الإجمالي: {total} دج</b>"
+    
+    keyboard.append([InlineKeyboardButton("✅ إتمام الطلب", callback_data="checkout_cart")])
+    keyboard.append([InlineKeyboardButton("⬅️ رجوع للأقسام", callback_data="back_home")])
+    
+    await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def remove_from_cart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("🗑️ تم الحذف")
+    
+    product_id = int(query.data.replace("remove_from_cart_", ""))
+    cart = context.user_data.get('cart', [])
+    
+    context.user_data['cart'] = [item for item in cart if item['id'] != product_id]
+    await view_cart(update, context) # إعادة عرض السلة المحدثة
+
 def main():
     token = load_token()
     
@@ -587,6 +715,7 @@ def main():
             CallbackQueryHandler(order_start, pattern="^order_start$"),
             CallbackQueryHandler(order_start, pattern="^order_start_red$"),
             CallbackQueryHandler(order_start, pattern="^order_dyn_.*"),
+            CallbackQueryHandler(order_start, pattern="^checkout_cart$"),  # ✅ السطر الجديد
             CallbackQueryHandler(ask_for_track_code, pattern="^track_order$"),
             CallbackQueryHandler(track_order_direct, pattern="^track_order_")
         ],
