@@ -292,6 +292,21 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
+    if query.data == "checkout_cart":
+        cart = context.user_data.get('cart', [])
+        if not cart:
+            await query.answer("سلتك فارغة!", show_alert=True)
+            return
+        total = sum(item['price'] * item['quantity'] for item in cart)
+        context.user_data['checkout_total'] = total
+        await query.edit_message_text(
+            f"📝 ممتاز! لنبدأ طلبك.\n\n"
+            f"💰 <b>الإجمالي: {total} دج</b>\n\n"
+            f"ما هو <b>اسمك الكامل</b>؟", 
+            parse_mode="HTML"
+        )
+        return ASK_NAME
+
     selected_product = context.user_data.get('selected_product')
     product_id_from_callback = None
     
@@ -345,25 +360,7 @@ async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_text(text, parse_mode="HTML")
         return ASK_NAME
-        
-    # إذا كان الطلب قادماً من السلة (checkout_cart)
-    if query.data == "checkout_cart":
-        cart = context.user_data.get('cart', [])
-        if not cart:
-            await query.answer("سلتك فارغة!", show_alert=True)
-            return
-            
-        # حساب الإجمالي
-        total = sum(item['price'] * item['quantity'] for item in cart)
-        context.user_data['checkout_total'] = total
-        
-        await query.edit_message_text(
-            f"📝 ممتاز! لنبدأ طلبك.\n\n"
-            f"💰 <b>الإجمالي: {total} دج</b>\n\n"
-            f"ما هو <b>اسمك الكامل</b>؟", 
-            parse_mode="HTML"
-        )
-        return ASK_NAME
+   
 async def get_dynamic_attr(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -733,6 +730,11 @@ def main():
     )
 
     app.add_handler(conv_handler)
+    
+    # ✅ إضافة معالجات السلة
+    app.add_handler(CallbackQueryHandler(add_to_cart, pattern="^add_to_cart_"))
+    app.add_handler(CallbackQueryHandler(view_cart, pattern="^view_cart$"))
+    app.add_handler(CallbackQueryHandler(remove_from_cart, pattern="^remove_from_cart_"))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     is_render = os.environ.get("RENDER") is not None
