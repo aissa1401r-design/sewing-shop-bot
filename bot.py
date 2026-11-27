@@ -404,12 +404,26 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['order']['address'] = update.message.text
     order = context.user_data['order']
+    cart = context.user_data.get('cart', [])
     
     summary = f"<b>ملخص طلبك:</b>\n\n"
-    summary += f"📦 المنتج: {order.get('product', 'غير محدد')}\n"
-    if 'اللون' in order: summary += f"🎨 اللون: {order['اللون']}\n"
-    if 'المقاس' in order: summary += f"📏 المقاس: {order['المقاس']}\n"
-    if 'السعة' in order: summary += f"🧴 السعة: {order['السعة']}\n"
+    
+    # ✅ إذا كان الطلب من السلة، نعرض المنتجات
+    if cart:
+        total = 0
+        for item in cart:
+            item_total = item['price'] * item['quantity']
+            total += item_total
+            summary += f"▪️ {item['name']} (x{item['quantity']}) - {item_total} دج\n"
+        summary += f"\n💰 <b>الإجمالي: {total} دج</b>\n\n"
+    else:
+        # طلب مباشر (منتج واحد)
+        summary += f"📦 المنتج: {order.get('product', 'غير محدد')}\n"
+        if 'اللون' in order: summary += f"🎨 اللون: {order['اللون']}\n"
+        if 'المقاس' in order: summary += f"📏 المقاس: {order['المقاس']}\n"
+        if 'السعة' in order: summary += f"🧴 السعة: {order['السعة']}\n"
+        summary += "\n"
+
     summary += f"👤 الاسم: {order.get('name')}\n"
     summary += f"📞 الهاتف: {order.get('phone')}\n"
     summary += f"📍 العنوان: {order.get('address')}\n\n"
@@ -423,7 +437,7 @@ async def get_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(summary, parse_mode="HTML", reply_markup=reply_markup)
     return CONFIRM
-
+    
 async def confirm_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
