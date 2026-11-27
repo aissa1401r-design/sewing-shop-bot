@@ -30,6 +30,7 @@ EDIT_ID, EDIT_FIELD, EDIT_VALUE = range(10, 13)
 DELETE_ID, DELETE_CONFIRM = range(13, 15)
 ASK_PHOTOS_ID, ASK_MORE_PHOTOS = range(20, 22)
 ASK_SEARCH_QUERY = 7
+ASK_COST_PRICE = 8  # ✅ حالة جديدة
 
 MAX_PHOTOS = 10
 
@@ -165,6 +166,7 @@ async def start_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [KeyboardButton("➕ إضافة منتج")],
         [KeyboardButton("📦 عرض المنتجات"), KeyboardButton("🔍 بحث عن منتج")],
         [KeyboardButton("📊 الإحصائيات")],
+        [KeyboardButton("📈 تقارير المبيعات")],
         [KeyboardButton("🗑️ حذف منتج"), KeyboardButton("✏️ تعديل منتج")],
         [KeyboardButton("🖼️ إضافة صور"), KeyboardButton("📦 الطلبات")]
     ]
@@ -182,6 +184,7 @@ async def handle_admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYP
     if text == "📦 عرض المنتجات": await list_products(update, context)
     elif text == "📊 الإحصائيات": await stats(update, context)
     elif text == "📦 الطلبات": await list_orders(update, context)
+    elif text == "📈 تقارير المبيعات": await show_sales_report(update, context)
     else: await update.message.reply_text("⚠️ الرجاء اختيار زر من القائمة.")
 
 
@@ -248,6 +251,10 @@ async def get_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await update.message.reply_text("⚠️ الرجاء إدخال رقم صحيح.")
         return ASK_PRICE
+    
+    # ✅ بعد السعر، نطلب سعر التكلفة
+    await update.message.reply_text("💸 ما هو <b>سعر التكلفة</b>؟ (كم دفعتِ لشرائه؟) - أرقام فقط:", parse_mode="HTML")
+    return ASK_COST_PRICE
     remaining = context.user_data.get('remaining_attrs', [])
     if remaining:
         await update.message.reply_text(ATTR_QUESTIONS.get(remaining[0], "أدخلي القيمة:"))
@@ -322,9 +329,9 @@ async def preview_publish(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     product_data = {
-        "name": product['name'], "price": product['price'], "category": product['category'],
-        "description": product['description'], "attributes": product['attributes'],
-        "photo": product['photo'], "photos": product['photos']
+        "name": product['name'], "price": product['price'], "cost_price": product.get('cost_price', 0), # ✅ إضافة التكلفة
+        "category": product['category'], "description": product['description'], 
+        "attributes": product['attributes'], "photo": product['photo'], "photos": product['photos']
     }
     try:
         saved_product = save_product(product_data)
@@ -548,35 +555,78 @@ async def delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"⚠️ حدث خطأ: {e}")
     return ConversationHandler.END
 
-
 # ═══ الطلبات ═══
 async def list_orders(update: Update, context: ContextTypes.DEFAULT_TYPE, page=0):
     if not is_admin(update.effective_user.id):
-        await deny_non_admin(update); return
+        await deny_non_admin(update)
+        return
+        
+    from database import get_all_orders
     orders = get_all_orders()
+    
     if not orders:
-        await update.message.reply_text("📭 لا توجد طلبات."); return
+        await update.message.reply_text("📭 لا توجد طلبات حتى الآن.")
+        return
+        
+    # التأكد من أن رقم الصفحة صحيح
     page = max(0, min(page, len(orders) - 1))
     order = orders[page]
+    
     status = order.get('status', 'قيد المراجعة')
-    status_emoji = "🚚" if status=="تم الشحن" else "✅" if status=="مكتمل" else "❌" if status=="ملغي" else "🕒"
-    text = (f"🆔 <b>رقم الطلب:</b> <code>{order.get('order_code', 'غير متوفر')}</code>\n"
-            f"🛍️ <b>المنتج:</b> {order.get('product_name') or order.get('product', 'غير معروف')}\n"
-            f"👤 <b>الزبونة:</b> {order.get('customer_name') or order.get('name', 'غير معروف')}\n"
-            f"📞 <b>الهاتف:</b> {order.get('customer_phone') or order.get('phone', 'غير معروف')}\n"
-            f"📍 <b>العنوان:</b> {order.get('customer_address') or order.get('address', 'غير معروف')}\n"
-            f"📊 <b>الحالة:</b> {status_emoji} {status}\n\n<i>الطلب {page+1} من {len(orders)}</i>")
-    status_keyboard = [
-        [InlineKeyboardButton("🚚 تم الشحن", callback_data=f"ord_status_تم الشحن_{order['id']}_{page}"), InlineKeyboardButton("✅ مكتمل", callback_data=f"ord_status_مكتمل_{order['id']}_{page}")],
-        [InlineKeyboardButton("❌ ملغي", callback_data=f"ord_status_ملغي_{order['id']}_{page}")]
-    ]
+    
+    # ترجمة الحالة إلى إيموجي
+    status_emoji = "🕒"
+    if status == "تم الشحن": status_emoji = "🚚"
+    elif status == "مكتمل": status_emoji = "✅"
+    elif status == "مدفوع": status_emoji = "💰"
+    elif status == "ملغي": status_emoji = "❌"
+
+    text = (
+        f"🆔 <b>رقم الطلب:</b> <code>{order.get('order_code', 'غير متوفر')}</code>\n"
+        f"🛍️ <b>المنتج:</b> {order.get('product_name') or order.get('product', 'غير معروف')}\n"
+        f"👤 <b>الزبونة:</b> {order.get('customer_name') or order.get('name', 'غير معروف')}\n"
+        f"📞 <b>الهاتف:</b> {order.get('customer_phone') or order.get('phone', 'غير معروف')}\n"
+        f"📍 <b>العنوان:</b> {order.get('customer_address') or order.get('address', 'غير معروف')}\n"
+        f"💰 <b>الإجمالي:</b> {order.get('total_price', order.get('product_price', 'غير محدد'))} دج\n"
+        f"📊 <b>الحالة:</b> {status_emoji} {status}\n\n"
+        f"<i>الطلب {page+1} من {len(orders)}</i>"
+    )
+
+    # ═══ بناء الأزرار بناءً على الحالة (تسلسل منطقي) ═══
+    status_keyboard = []
+    
+    if status == "قيد المراجعة":
+        status_keyboard.append([
+            InlineKeyboardButton("🚚 تم الشحن", callback_data=f"ord_status_تم الشحن_{order['id']}_{page}"),
+            InlineKeyboardButton("❌ ملغي", callback_data=f"ord_status_ملغي_{order['id']}_{page}")
+        ])
+    elif status == "تم الشحن":
+        status_keyboard.append([
+            InlineKeyboardButton("✅ مكتمل", callback_data=f"ord_status_مكتمل_{order['id']}_{page}"),
+            InlineKeyboardButton("❌ ملغي", callback_data=f"ord_status_ملغي_{order['id']}_{page}")
+        ])
+    elif status == "مكتمل":
+        status_keyboard.append([
+            InlineKeyboardButton("💰 مدفوع", callback_data=f"ord_status_مدفوع_{order['id']}_{page}")
+        ])
+    # (إذا كانت الحالة "مدفوع" أو "ملغي"، لا نضيف أي أزرار تغيير حالة)
+
+    # أزرار التنقل بين الطلبات
     nav_row = []
-    if page > 0: nav_row.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"ord_page_{page-1}"))
-    if page < len(orders) - 1: nav_row.append(InlineKeyboardButton("التالي ➡️", callback_data=f"ord_page_{page+1}"))
-    if nav_row: status_keyboard.append(nav_row)
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ السابق", callback_data=f"ord_page_{page-1}"))
+    if page < len(orders) - 1:
+        nav_row.append(InlineKeyboardButton("التالي ➡️", callback_data=f"ord_page_{page+1}"))
+        
+    if nav_row:
+        status_keyboard.append(nav_row)
+
     reply_markup = InlineKeyboardMarkup(status_keyboard)
-    if update.callback_query: await update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
-    else: await update.message.reply_text(text, parse_mode="HTML", reply_markup=reply_markup)
+
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, parse_mode="HTML", reply_markup=reply_markup)
 
 async def change_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """تغيير حالة الطلب وإشعار الزبونة"""
@@ -612,8 +662,8 @@ async def change_order_status(update: Update, context: ContextTypes.DEFAULT_TYPE
         await list_orders(update, context, page=page)
         await query.answer(f"✅ تم التحديث إلى: {new_status}", show_alert=False)
         
-        # 4. إرسال إشعار للزبونة (إذا كان لدينا معرفها)
-        if customer_id:
+        # 4. إرسال إشعار للزبونة (إذا كانت الحالة ليست "مدفوع")
+        if customer_id and new_status != "مدفوع":
             try:
                 # إنشاء بوت مؤقت باستخدام توكن بوت الزبونات
                 customer_token = os.getenv("BOT_TOKEN")
@@ -785,6 +835,45 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         try: await update.effective_message.reply_text("⚠️ خطأ في الشبكة، حاولي مجدداً.")
         except: pass
 
+async def show_sales_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await deny_non_admin(update)
+        return
+
+    from database import get_sales_statistics
+    stats = get_sales_statistics()
+    
+    if not stats:
+        await update.message.reply_text("📭 لا توجد مبيعات حتى الآن.")
+        return
+
+    text = "📈 <b>تقرير المبيعات والأرباح:</b>\n\n"
+    text += f"📦 <b>إجمالي الطلبات:</b> {stats['total_orders']} طلب\n"
+    text += f"✅ <b>الطلبات المكتملة:</b> {stats['completed_orders']} طلب\n\n"
+    text += f"💰 <b>إجمالي الإيرادات:</b> {stats['total_revenue']} دج\n"
+    text += f"💸 <b>إجمالي التكلفة:</b> {stats['total_cost']} دج\n"
+    text += f"📈 <b>صافي الربح:</b> {stats['total_profit']} دج\n\n"
+    
+    if stats['top_products']:
+        text += "🔥 <b>المنتجات الأكثر مبيعاً:</b>\n"
+        for p_name, qty in stats['top_products']:
+            text += f"🔹 {p_name}: {qty} قطعة\n"
+
+    await update.message.reply_text(text, parse_mode="HTML")
+
+async def get_cost_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        context.user_data['new_product']['cost_price'] = int(update.message.text)
+    except ValueError:
+        await update.message.reply_text("⚠️ الرجاء إدخال رقم صحيح.")
+        return ASK_COST_PRICE
+
+    remaining = context.user_data.get('remaining_attrs', [])
+    if remaining:
+        await update.message.reply_text(ATTR_QUESTIONS.get(remaining[0], "أدخلي القيمة:"))
+        return ASK_DYNAMIC_ATTR
+    await update.message.reply_text("📝 أضيفي وصفاً قصيراً للمنتج:")
+    return ASK_DESC
 
 # ═══ Main ═══
 def main():
@@ -801,6 +890,7 @@ def main():
             ASK_PHOTO: [MessageHandler(filters.PHOTO, get_photo), CallbackQueryHandler(photos_done, pattern="^photos_done$")],
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             ASK_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_price)],
+            ASK_COST_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_cost_price)], # ✅ الحالة الجديدة
             ASK_DYNAMIC_ATTR: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_dynamic_attr)],
             ASK_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_desc)],
             PREVIEW_PRODUCT: [CallbackQueryHandler(preview_publish, pattern="^preview_publish$"), CallbackQueryHandler(preview_edit_field, pattern="^preview_edit_"), CallbackQueryHandler(preview_cancel, pattern="^preview_cancel$"), MessageHandler(filters.TEXT & ~filters.COMMAND, preview_apply_edit)],

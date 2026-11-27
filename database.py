@@ -186,3 +186,66 @@ def save_order_with_items(customer_info, cart_items, total_price):
     except Exception as e:
         print(f"⚠️ خطأ في حفظ الطلب مع السلة: {e}")
         return None
+
+def get_sales_statistics():
+    """حساب إحصائيات المبيعات والأرباح"""
+    try:
+        # 1. جلب جميع الطلبات
+        orders = supabase.table("orders").select("*").execute().data
+        if not orders:
+            return None
+            
+        # 2. جلب جميع عناصر الطلبات
+        order_items = supabase.table("order_items").select("*").execute().data
+        
+        # 3. جلب المنتجات لمعرفة سعر التكلفة
+        products = supabase.table("products").select("id, cost_price").execute().data
+        cost_dict = {p['id']: p.get('cost_price', 0) for p in products}
+        
+        total_revenue = 0
+        total_cost = 0
+        total_orders = len(orders)
+        completed_orders = sum(1 for o in orders if o.get('status') == 'مكتمل')
+        
+        product_sales = {}
+        
+        for item in order_items:
+            order_id = item['order_id']
+            # نتحقق من حالة الطلب (نحسب فقط الطلبات غير الملغية)
+            parent_order = next((o for o in orders if o['id'] == order_id), None)
+            if parent_order and parent_order.get('status') == 'ملغي':
+                continue
+                
+            price = float(item.get('price', 0))
+            qty = int(item.get('quantity', 1))
+            product_id = item.get('product_id')
+            
+            # حساب الإيرادات
+            total_revenue += (price * qty)
+            
+            # حساب التكلفة (إذا كان المنتج موجوداً في جدول المنتجات)
+            if product_id and product_id in cost_dict:
+                total_cost += (cost_dict[product_id] * qty)
+            
+            # تجميع مبيعات كل منتج
+            p_name = item.get('product_name', 'غير معروف')
+            if p_name not in product_sales:
+                product_sales[p_name] = 0
+            product_sales[p_name] += qty
+
+        total_profit = total_revenue - total_cost
+        
+        # ترتيب المنتجات الأكثر مبيعاً
+        top_products = sorted(product_sales.items(), key=lambda x: x[1], reverse=True)[:5]
+        
+        return {
+            "total_orders": total_orders,
+            "completed_orders": completed_orders,
+            "total_revenue": total_revenue,
+            "total_cost": total_cost,
+            "total_profit": total_profit,
+            "top_products": top_products
+        }
+    except Exception as e:
+        print(f"⚠️ خطأ في حساب الإحصائيات: {e}")
+        return None
